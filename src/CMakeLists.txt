@@ -68,6 +68,16 @@ else()
     set(FQ_SOURCES ${FQ_SOURCES} ../build/fq_raw_generic.cpp ../build/fq_generic.cpp)
 endif()
 
+if(USE_C_MSM)
+    set(FQ_SOURCES ${FQ_SOURCES}
+            ../src/msm/math_fn.c
+            ../src/msm/fq_c.c
+            ../src/msm/fq_raw_generic_c.c
+            ../src/msm/curve_c.c
+            ../src/msm/msm_c.c
+)
+endif()
+
 add_library(fq STATIC ${FQ_SOURCES})
 set_target_properties(fq PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
@@ -162,3 +172,5 @@ endif()
 
 
 add_executable(test_prover test_prover.cpp)
+add_executable(test_prover_c msm/test_prover_c.c)
+# TODO Add test
