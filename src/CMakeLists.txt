@@ -2,6 +2,8 @@ link_libraries(${GMP_LIB})
 
 add_definitions(${GMP_DEFINIONS})
 
+set(CMAKE_BUILD_TYPE Debug)
+
 if(USE_ASM)
     if(ARCH MATCHES "arm64")
             add_definitions(-DUSE_ASM -DARCH_ARM64)
