@@ -44,19 +44,42 @@ uint64_t mp_add_n(uint64_t *r, const uint64_t *a, const uint64_t *b, size_t n) {
 }
 
 /**
- * Helper function: Add two multi-precision numbers with carry using 32-bit operations
+ * Helper function: Add two multi-precision numbers with carry
  * a and b must have the same size, result is stored in r
  * Returns the final carry
  */
-//uint32_t mp_add_n(uint32_t *r, const uint32_t *a, const uint32_t *b, size_t n) {
-//    uint32_t carry = 0;
-//    for (size_t i = 0; i < n; i++) {
-//        uint32_t sum = a[i] + b[i] + carry;
-//        carry = (sum < a[i]) || ((sum == a[i]) && (b[i] > 0));
-//        r[i] = sum;
-//    }
-//    return carry;
-//}
+uint64_t mp_add_n_64(uint64_t *r, const uint64_t *a, const uint64_t *b, size_t n) {
+    uint32_t carry = 0;
+    for (size_t i = 0; i < n; i++) {
+        uint32_t a_low = (uint32_t) (a[i]&0xffffffff);
+        uint32_t a_high = (uint32_t) (a[i]>>32);
+        uint32_t b_low = (uint32_t) (b[i]&0xffffffff);
+        uint32_t b_high = (uint32_t) (b[i]>>32);
+        uint32_t sum_high = 0;
+        uint32_t tmp_carry_1 = 0;
+        uint32_t tmp_carry_2 = 0;
+        uint32_t sum_low = uaddCarry(a_low, b_low, &tmp_carry_1);
+        sum_low = uaddCarry(sum_low, carry, &tmp_carry_2);
+
+        carry = 0;
+        sum_high = uaddCarry(a_high, b_high, &carry);
+
+        sum_high = uaddCarry(sum_high, tmp_carry_1, &tmp_carry_1);
+        if (tmp_carry_1) {
+            carry++;
+        }
+        tmp_carry_1 = 0;
+
+        sum_high = uaddCarry(sum_high, tmp_carry_2, &tmp_carry_1);
+        if (tmp_carry_1) {
+            carry++;
+        }
+
+
+        r[i] = (((uint64_t)sum_high) << 32) | sum_low;
+    }
+    return carry;
+}
 
 /**
  * Helper function: Add a single limb to a multi-precision number with carry
@@ -77,24 +100,47 @@ uint64_t mp_add_1(uint64_t *r, const uint64_t *a, size_t n, uint64_t b) {
     return carry;
 }
 
+
 /**
  * Helper function: Add a single limb to a multi-precision number with carry
  * Result is stored in r
  * Returns the final carry
  */
-//uint32_t mp_add_1(uint32_t *r, const uint32_t *a, size_t n, uint32_t b) {
-//    uint32_t carry = b;
-//    for (size_t i = 0; i < n && carry; i++) {
-//        uint32_t sum = a[i] + carry;
-//        carry = sum < a[i];
-//        r[i] = sum;
-//    }
-//    if (carry == 0 && r != a) {
-//        // Just copy the remaining limbs
-//        memcpy(r, a + (r - a), (n - (r - a)) * sizeof(uint32_t));
-//    }
-//    return carry;
-//}
+uint64_t mp_add_1_64(uint64_t *r, const uint64_t *a, size_t n, uint64_t b) {
+    //uint64_t carry = b;
+    size_t i = 0;
+    uint32_t b_low = (uint32_t) (b&0xffffffff);
+    uint32_t b_high = (uint32_t) (b>>32);
+    uint32_t carry_low = b_low;
+    uint32_t carry_high = b_high;
+
+    for (; i < n && (carry_low || carry_high); i++) {
+        uint32_t a_low = (uint32_t) (a[i]&0xffffffff);
+        uint32_t a_high = (uint32_t) (a[i]>>32);
+
+        uint32_t sum_high = 0;
+        uint32_t tmp_carry = 0;
+        uint32_t sum_low = uaddCarry(a_low, carry_low, &tmp_carry);
+
+        carry_low = 0;
+        sum_high = uaddCarry(a_high, carry_high, &carry_low);
+        sum_high = uaddCarry(sum_high, tmp_carry, &tmp_carry);
+
+        if (tmp_carry) {
+            carry_low++;
+        }
+
+		r[i] = (((uint64_t)sum_high) << 32) | sum_low;
+    }
+
+    while(i < n) {
+        // Just copy the remaining limbs
+        r[i] = a[i];
+        i++;
+    }
+
+    return (((uint64_t)carry_high) << 32) | carry_low;
+}
 
 /**
  * Helper function: Add one multi-precision number to another
@@ -122,21 +168,25 @@ void mp_add(uint64_t *r, const uint64_t *a, size_t an, const uint64_t *b, size_t
  * r = a + b
  * a and b can have different sizes
  */
-//void mp_add(uint32_t *r, const uint32_t *a, size_t an, const uint32_t *b, size_t bn) {
-//    size_t common = (an < bn) ? an : bn;
-//
-//    uint32_t carry = mp_add_n(r, a, b, common);
-//
-//    if (an > common) {
-//        carry = mp_add_1(r + common, a + common, an - common, carry);
-//    } else if (bn > common) {
-//        carry = mp_add_1(r + common, b + common, bn - common, carry);
-//    }
-//
-//    if (carry && an >= bn) {
-//        r[an] = carry;
-//    }
-//}
+void mp_add_64(uint64_t *r, const uint64_t *a, size_t an, const uint64_t *b, size_t bn) {
+    size_t common = (an < bn) ? an : bn;
+
+    uint64_t carry = mp_add_n_64(r, a, b, common);
+
+    if (an > common) {
+        carry = mp_add_1_64(r + common, a + common, an - common, carry);
+    } else if (bn > common) {
+        carry = mp_add_1_64(r + common, b + common, bn - common, carry);
+    }
+
+    if (carry) {
+        if (an >= bn) {
+            r[an] = carry;
+        } else {
+            r[bn] = carry;
+        }
+    }
+}
 
 /**
  * Helper function: Subtract two multi-precision numbers with borrow
@@ -152,6 +202,38 @@ uint64_t mp_sub_n(uint64_t *r, const uint64_t *a, const uint64_t *b, size_t n) {
     }
     return borrow;
 }
+
+/**
+ * Helper function: Subtract two multi-precision numbers with borrow
+ * a and b must have the same size, result is stored in r
+ * Returns the final borrow (1 if a < b, 0 otherwise)
+ */
+uint64_t mp_sub_n_64(uint64_t *r, const uint64_t *a, const uint64_t *b, size_t n) {
+    uint64_t borrow = 0;
+
+    for (size_t i = 0; i < n; i++) {
+        uint32_t a_low = (uint32_t) (a[i]&0xffffffff);
+        uint32_t a_high = (uint32_t) (a[i]>>32);
+        uint32_t b_low = (uint32_t) (b[i]&0xffffffff);
+        uint32_t b_high = (uint32_t) (b[i]>>32);
+
+        uint32_t diff_high = 0;
+        uint32_t temp_borrow1 = 0;
+        uint32_t temp_borrow2 = 0;
+        uint32_t diff_low = usubBorrow(a_low, b_low, &temp_borrow1);
+        diff_low = usubBorrow(diff_low, borrow, &temp_borrow2);
+        borrow = uaddCarry(temp_borrow1, temp_borrow2, &temp_borrow1);
+
+        diff_high = usubBorrow(a_high, b_high, &temp_borrow1);
+        diff_high = usubBorrow(diff_high, borrow, &temp_borrow2);
+		borrow = uaddCarry(temp_borrow1, temp_borrow2, &temp_borrow1);
+
+		r[i] = (((uint32_t)diff_high) << 32) | diff_low;
+    }
+
+    return borrow;
+}
+
 
 /**
  * Helper function: Multiply a multi-precision number by a single limb
@@ -188,14 +270,6 @@ uint64_t mp_mul_1(uint64_t *r, const uint64_t *a, size_t n, uint64_t b) {
         // Add cross products to the high word
         high = high_prod + (cross1 >> 32) + (cross2 >> 32);
 
-        // Handle carry from lower 32 bits of cross products
-//        uint64_t cross_low = ((cross1 & 0xFFFFFFFFULL) + (cross2 & 0xFFFFFFFFULL)) << 32;
-//        uint64_t sum = low + cross_low;
-//        if (sum < low) {
-//            high++;
-//        }
-//        low = sum;
-
         uint64_t sum = low + ((cross1 & 0xFFFFFFFFULL) << 32);
         if (sum < low) {
             high++;
@@ -217,6 +291,92 @@ uint64_t mp_mul_1(uint64_t *r, const uint64_t *a, size_t n, uint64_t b) {
         carry = high;
     }
     return carry;
+}
+
+
+/**
+ * Helper function: Multiply a multi-precision number by a single limb
+ * Result is stored in r
+ * Returns the carry
+ */
+uint64_t mp_mul_1_64(uint64_t *r, const uint64_t *a, size_t n, uint64_t b) {
+    uint32_t carry_high = 0;
+    uint32_t carry_low = 0;
+	uint32_t b_low = (uint32_t) (b&0xffffffff);
+    uint32_t b_high = (uint32_t) (b>>32);
+
+    for (size_t i = 0; i < n; i++) {
+        uint32_t mult_low;
+        uint32_t mult_high;
+        uint32_t sum_low = 0;
+        uint32_t sum_high = 0;
+        uint32_t tmp_carry_low = 0;
+        uint32_t tmp_carry_high = 0;
+
+        // Compute the high 64 bits of the product
+        // Split into 32-bit chunks to avoid overflow
+        uint32_t a_low = (uint32_t) (a[i]&0xffffffff);
+        uint32_t a_high = (uint32_t) (a[i]>>32);
+
+        //low = a_lo * b_lo;
+		umulExtended(a_low, b_low, &mult_high, &mult_low);
+        sum_low = uaddCarry(mult_low, carry_low, &tmp_carry_low);
+
+        uint32_t cross1_low;
+        uint32_t cross1_high;
+        uint32_t cross2_low;
+        uint32_t cross2_high;
+
+		umulExtended(a_low, b_high, &cross1_high, &cross1_low);
+        umulExtended(a_high, b_low, &cross2_high, &cross2_low);
+
+        sum_high = uaddCarry(carry_high, tmp_carry_low, &tmp_carry_high);
+
+        carry_low = 0;
+        carry_high = 0;
+
+        if(tmp_carry_high) {
+            carry_low++;
+        }
+
+        sum_high = uaddCarry(sum_high, mult_high, &tmp_carry_high);
+        if(tmp_carry_high) {
+            carry_low++;
+        }
+
+        sum_high = uaddCarry(sum_high, cross1_low, &tmp_carry_high);
+        if(tmp_carry_high) {
+            carry_low++;
+        }
+
+        sum_high = uaddCarry(sum_high, cross2_low, &tmp_carry_high);
+        if(tmp_carry_high) {
+            carry_low++;
+        }
+
+        umulExtended(a_high, b_high, &mult_high, &mult_low);
+
+        carry_low = uaddCarry(carry_low, mult_low, &tmp_carry_low);
+        if(tmp_carry_low) {
+            carry_high++;
+        }
+
+        carry_low = uaddCarry(carry_low, cross1_high, &tmp_carry_low);
+        if(tmp_carry_low) {
+            carry_high++;
+        }
+
+        carry_low = uaddCarry(carry_low, cross2_high, &tmp_carry_low);
+        if(tmp_carry_low) {
+            carry_high++;
+        }
+
+        carry_high = uaddCarry(carry_high, mult_high, &tmp_carry_low);
+
+        r[i] = (((uint64_t)sum_high) << 32) | sum_low;
+    }
+
+    return ((uint64_t)carry_high << 32) | carry_low;
 }
 
 /**
@@ -263,11 +423,6 @@ uint64_t mp_addmul_1(uint64_t *r, const uint64_t *a, size_t n, uint64_t b) {
         }
         low = sum;
 
-        // Add the product to r[i] with carry from the previous iteration
-//        sum = r[i] + low + carry;
-//        if (sum < r[i] || (sum == r[i] && (low > 0 || carry > 0))) {
-//            high++;
-//        }
         sum = low + carry;
         if (sum < low) {
           high++;
@@ -286,6 +441,105 @@ uint64_t mp_addmul_1(uint64_t *r, const uint64_t *a, size_t n, uint64_t b) {
 }
 
 /**
+ * Helper function: Multiply a multi-precision number by a single limb and add to another
+ * r += a * b
+ * Returns the final carry
+ */
+uint64_t mp_addmul_1_64(uint64_t *r, const uint64_t *a, size_t n, uint64_t b) {
+    uint32_t carry_high = 0;
+    uint32_t carry_low = 0;
+    uint32_t b_low = (uint32_t) (b&0xffffffff);
+    uint32_t b_high = (uint32_t) (b>>32);
+
+    for (size_t i = 0; i < n; i++) {
+        uint32_t mult_low;
+        uint32_t mult_high;
+        uint32_t sum_low = 0;
+        uint32_t sum_high = 0;
+        uint32_t tmp_carry_low = 0;
+        uint32_t tmp_carry_high = 0;
+        uint32_t tmp_carry = 0;
+
+        // Compute the high 64 bits of the product
+        // Split into 32-bit chunks to avoid overflow
+        uint32_t a_low = (uint32_t) (a[i]&0xffffffff);
+        uint32_t a_high = (uint32_t) (a[i]>>32);
+        uint32_t r_low = (uint32_t) (r[i] & 0xFFFFFFFFULL);
+        uint32_t r_high = (uint32_t) (r[i] >> 32);
+
+        //low = a_lo * b_lo;
+		umulExtended(a_low, b_low, &mult_high, &mult_low);
+        sum_low = uaddCarry(mult_low, carry_low, &tmp_carry_low);
+        sum_low = uaddCarry(sum_low, r_low, &tmp_carry);
+
+        uint64_t cross1_low;
+        uint64_t cross1_high;
+        uint64_t cross2_low;
+        uint64_t cross2_high;
+
+		umulExtended(a_low, b_high, &cross1_high, &cross1_low);
+        umulExtended(a_high, b_low, &cross2_high, &cross2_low);
+
+        sum_high = uaddCarry(carry_high, tmp_carry_low, &tmp_carry_high);
+
+        carry_low = 0;
+        carry_high = 0;
+
+        if(tmp_carry_high) {
+            carry_low++;
+        }
+
+        sum_high = uaddCarry(sum_high, tmp_carry, &tmp_carry_high);
+        if(tmp_carry_high) {
+            carry_low++;
+        }
+
+        sum_high = uaddCarry(sum_high, mult_high, &tmp_carry_high);
+        if(tmp_carry_high) {
+            carry_low++;
+        }
+
+        sum_high = uaddCarry(sum_high, cross1_low, &tmp_carry_high);
+        if(tmp_carry_high) {
+            carry_low++;
+        }
+
+        sum_high = uaddCarry(sum_high, cross2_low, &tmp_carry_high);
+        if(tmp_carry_high) {
+            carry_low++;
+        }
+
+        sum_high = uaddCarry(sum_high, r_high, &tmp_carry_high);
+        if(tmp_carry_high) {
+            carry_low++;
+        }
+
+        umulExtended(a_high, b_high, &mult_high, &mult_low);
+
+        carry_low = uaddCarry(carry_low, mult_low, &tmp_carry_low);
+        if(tmp_carry_low) {
+            carry_high++;
+        }
+
+        carry_low = uaddCarry(carry_low, cross1_high, &tmp_carry_low);
+        if(tmp_carry_low) {
+            carry_high++;
+        }
+
+        carry_low = uaddCarry(carry_low, cross2_high, &tmp_carry_low);
+        if(tmp_carry_low) {
+            carry_high++;
+        }
+
+        carry_high = uaddCarry(carry_high, mult_high, &tmp_carry_low);
+
+        r[i] = (((uint64_t)sum_high) << 32) | sum_low;
+    }
+
+	return (((uint64_t) carry_high) << 32) | carry_low;
+}
+
+/**
  * Helper function: Compare two multi-precision numbers
  * Returns < 0 if a < b, 0 if a == b, > 0 if a > b
  */
@@ -301,7 +555,9 @@ int mp_cmp(const uint64_t *a, const uint64_t *b, size_t n) {
  * Helper function: Copy a multi-precision number
  */
 void mp_copy(uint64_t *dst, const uint64_t *src, size_t n) {
-    memcpy(dst, src, n * sizeof(uint64_t));
+    for (size_t i = 0; i < n; i++) {
+        dst[i] = src[i];
+    }
 }
 
 /**

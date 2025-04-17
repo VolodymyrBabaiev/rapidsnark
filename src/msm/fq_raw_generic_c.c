@@ -127,34 +127,34 @@ void Fq_rawMMul(FqRawElement pRawResult, const FqRawElement pRawA, const FqRawEl
     memset(product2, 0, N*sizeof(uint64_t));
     memset(product3, 0, N*sizeof(uint64_t));
 
-    product0[4] = mp_mul_1(product0, pRawB, Fq_N64, pRawA[0]);
+    product0[4] = mp_mul_1_64(product0, pRawB, Fq_N64, pRawA[0]);
 
     np0 = Fq_np_static * product0[0];
-    product1[1] = mp_addmul_1(product0, mq, N, np0);
+    product1[1] = mp_addmul_1_64(product0, mq, N, np0);
 
-    product1[4] = mp_addmul_1(product1, pRawB, Fq_N64, pRawA[1]);
-    mp_add(product1, product1, N, product0+1, N-1);
+    product1[4] = mp_addmul_1_64(product1, pRawB, Fq_N64, pRawA[1]);
+    mp_add_64(product1, product1, N, product0+1, N-1);
 
     np0 = Fq_np_static * product1[0];
-    product2[1] = mp_addmul_1(product1, mq, N, np0);
+    product2[1] = mp_addmul_1_64(product1, mq, N, np0);
 
-    product2[4] = mp_addmul_1(product2, pRawB, Fq_N64, pRawA[2]);
-    mp_add(product2, product2, N, product1+1, N-1);
+    product2[4] = mp_addmul_1_64(product2, pRawB, Fq_N64, pRawA[2]);
+    mp_add_64(product2, product2, N, product1+1, N-1);
 
     np0 = Fq_np_static * product2[0];
-    product3[1] = mp_addmul_1(product2, mq, N, np0);
+    product3[1] = mp_addmul_1_64(product2, mq, N, np0);
 
-    product3[4] = mp_addmul_1(product3, pRawB, Fq_N64, pRawA[3]);
-    mp_add(product3, product3, N, product2+1, N-1);
+    product3[4] = mp_addmul_1_64(product3, pRawB, Fq_N64, pRawA[3]);
+    mp_add_64(product3, product3, N, product2+1, N-1);
 
     np0 = Fq_np_static * product3[0];
-    mp_addmul_1(product3, mq, N, np0);
+    mp_addmul_1_64(product3, mq, N, np0);
 
     mp_copy(pRawResult, product3+1, Fq_N64);
 
     if (mp_cmp(pRawResult, mq, Fq_N64) >= 0)
     {
-        mp_sub_n(pRawResult, pRawResult, mq, Fq_N64);
+        mp_sub_n_64(pRawResult, pRawResult, mq, Fq_N64);
     }
 }
 
@@ -285,28 +285,28 @@ void Fq_rawMMul1(FqRawElement pRawResult, const FqRawElement pRawA, uint64_t pRa
     memset(product2, 0, N*sizeof(uint64_t));
     memset(product3, 0, N*sizeof(uint64_t));
 
-    product0[4] = mp_mul_1(product0, pRawA, Fq_N64, pRawB);
+    product0[4] = mp_mul_1_64(product0, pRawA, Fq_N64, pRawB);
 
     np0 = Fq_np_static * product0[0];
-    product1[1] = mp_addmul_1(product0, mq, N, np0);
-    mp_add(product1, product1, N, product0+1, N-1);
+    product1[1] = mp_addmul_1_64(product0, mq, N, np0);
+    mp_add_64(product1, product1, N, product0+1, N-1);
 
     np0 = Fq_np_static * product1[0];
-    product2[1] = mp_addmul_1(product1, mq, N, np0);
-    mp_add(product2, product2, N, product1+1, N-1);
+    product2[1] = mp_addmul_1_64(product1, mq, N, np0);
+    mp_add_64(product2, product2, N, product1+1, N-1);
 
     np0 = Fq_np_static * product2[0];
-    product3[1] = mp_addmul_1(product2, mq, N, np0);
-    mp_add(product3, product3, N, product2+1, N-1);
+    product3[1] = mp_addmul_1_64(product2, mq, N, np0);
+    mp_add_64(product3, product3, N, product2+1, N-1);
 
     np0 = Fq_np_static * product3[0];
-    mp_addmul_1(product3, mq, N, np0);
+    mp_addmul_1_64(product3, mq, N, np0);
 
     mp_copy(pRawResult, product3+1, Fq_N64);
 
     if (mp_cmp(pRawResult, mq, Fq_N64) >= 0)
     {
-        mp_sub_n(pRawResult, pRawResult, mq, Fq_N64);
+        mp_sub_n_64(pRawResult, pRawResult, mq, Fq_N64);
     }
 }
 

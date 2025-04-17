@@ -18,6 +18,14 @@ void mp_add(uint64_t *r, const uint64_t *a, size_t an, const uint64_t *b, size_t
 uint64_t mp_sub_n(uint64_t *r, const uint64_t *a, const uint64_t *b, size_t n);
 uint64_t mp_mul_1(uint64_t *r, const uint64_t *a, size_t n, uint64_t b);
 uint64_t mp_addmul_1(uint64_t *r, const uint64_t *a, size_t n, uint64_t b);
+
+// 64-bit emulation
+uint64_t mp_add_n_64(uint64_t *r, const uint64_t *a, const uint64_t *b, size_t n);
+uint64_t mp_add_1_64(uint64_t *r, const uint64_t *a, size_t n, uint64_t b);
+void mp_add_64(uint64_t *r, const uint64_t *a, size_t an, const uint64_t *b, size_t bn);
+uint64_t mp_sub_n_64(uint64_t *r, const uint64_t *a, const uint64_t *b, size_t n);
+uint64_t mp_mul_1_64(uint64_t *r, const uint64_t *a, size_t n, uint64_t b);
+uint64_t mp_addmul_1_64(uint64_t *r, const uint64_t *a, size_t n, uint64_t b);
 //uint32_t mp_add_n(uint32_t *r, const uint32_t *a, const uint32_t *b, size_t n);
 //uint32_t mp_add_1(uint32_t *r, const uint32_t *a, size_t n, uint32_t b);
 //void mp_add(uint32_t *r, const uint32_t *a, size_t an, const uint32_t *b, size_t bn);
