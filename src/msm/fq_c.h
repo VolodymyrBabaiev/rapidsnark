@@ -32,31 +32,31 @@ typedef FqElement* PFqElement;
 
 // Raw element operations
 void Fq_rawCopy(FqRawElement pRawResult, const FqRawElement pRawA);
-void Fq_rawSwap(FqRawElement pRawResult, FqRawElement pRawA);
-void Fq_rawAdd(FqRawElement pRawResult, const FqRawElement pRawA, const FqRawElement pRawB);
+//void Fq_rawSwap(FqRawElement pRawResult, FqRawElement pRawA);
+//void Fq_rawAdd(FqRawElement pRawResult, const FqRawElement pRawA, const FqRawElement pRawB);
 void Fq_rawAddLS(FqRawElement pRawResult, FqRawElement pRawA, uint64_t rawB);
 void Fq_rawSub(FqRawElement pRawResult, const FqRawElement pRawA, const FqRawElement pRawB);
-void Fq_rawSubRegular(FqRawElement pRawResult, FqRawElement pRawA, FqRawElement pRawB);
+//void Fq_rawSubRegular(FqRawElement pRawResult, FqRawElement pRawA, FqRawElement pRawB);
 void Fq_rawNeg(FqRawElement pRawResult, const FqRawElement pRawA);
-void Fq_rawNegLS(FqRawElement pRawResult, FqRawElement pRawA, uint64_t rawB);
-void Fq_rawSubSL(FqRawElement pRawResult, uint64_t rawA, FqRawElement pRawB);
-void Fq_rawSubLS(FqRawElement pRawResult, FqRawElement pRawA, uint64_t rawB);
+//void Fq_rawNegLS(FqRawElement pRawResult, FqRawElement pRawA, uint64_t rawB);
+//void Fq_rawSubSL(FqRawElement pRawResult, uint64_t rawA, FqRawElement pRawB);
+//void Fq_rawSubLS(FqRawElement pRawResult, FqRawElement pRawA, uint64_t rawB);
 void Fq_rawMMul(FqRawElement pRawResult, const FqRawElement pRawA, const FqRawElement pRawB);
 void Fq_rawMSquare(FqRawElement pRawResult, const FqRawElement pRawA);
 void Fq_rawMMul1(FqRawElement pRawResult, const FqRawElement pRawA, uint64_t pRawB);
-void Fq_rawToMontgomery(FqRawElement pRawResult, const FqRawElement pRawA);
-void Fq_rawFromMontgomery(FqRawElement pRawResult, const FqRawElement pRawA);
-int Fq_rawIsEq(const FqRawElement pRawA, const FqRawElement pRawB);
+//void Fq_rawToMontgomery(FqRawElement pRawResult, const FqRawElement pRawA);
+//void Fq_rawFromMontgomery(FqRawElement pRawResult, const FqRawElement pRawA);
+//int Fq_rawIsEq(const FqRawElement pRawA, const FqRawElement pRawB);
 int Fq_rawIsZero(const FqRawElement pRawB);
-void Fq_rawZero(FqRawElement pRawResult);
-void Fq_rawCopyS2L(FqRawElement pRawResult, int64_t val);
-int Fq_rawCmp(FqRawElement pRawA, FqRawElement pRawB);
-void Fq_rawAnd(FqRawElement pRawResult, FqRawElement pRawA, FqRawElement pRawB);
-void Fq_rawOr(FqRawElement pRawResult, FqRawElement pRawA, FqRawElement pRawB);
-void Fq_rawXor(FqRawElement pRawResult, FqRawElement pRawA, FqRawElement pRawB);
-void Fq_rawShl(FqRawElement r, FqRawElement a, uint64_t b);
-void Fq_rawShr(FqRawElement r, FqRawElement a, uint64_t b);
-void Fq_rawNot(FqRawElement pRawResult, FqRawElement pRawA);
+//void Fq_rawZero(FqRawElement pRawResult);
+//void Fq_rawCopyS2L(FqRawElement pRawResult, int64_t val);
+//int Fq_rawCmp(FqRawElement pRawA, FqRawElement pRawB);
+//void Fq_rawAnd(FqRawElement pRawResult, FqRawElement pRawA, FqRawElement pRawB);
+//void Fq_rawOr(FqRawElement pRawResult, FqRawElement pRawA, FqRawElement pRawB);
+//void Fq_rawXor(FqRawElement pRawResult, FqRawElement pRawA, FqRawElement pRawB);
+//void Fq_rawShl(FqRawElement r, FqRawElement a, uint64_t b);
+//void Fq_rawShr(FqRawElement r, FqRawElement a, uint64_t b);
+//void Fq_rawNot(FqRawElement pRawResult, FqRawElement pRawA);
 
 // Element operations
 void Fq_copy(PFqElement r, PFqElement a);
@@ -66,44 +66,44 @@ void Fq_sub(PFqElement r, PFqElement a, PFqElement b);
 void Fq_neg(PFqElement r, PFqElement a);
 void Fq_mul(PFqElement r, PFqElement a, PFqElement b);
 void Fq_square(PFqElement r, PFqElement a);
-void Fq_band(PFqElement r, PFqElement a, PFqElement b);
-void Fq_bor(PFqElement r, PFqElement a, PFqElement b);
-void Fq_bxor(PFqElement r, PFqElement a, PFqElement b);
-void Fq_bnot(PFqElement r, PFqElement a);
-void Fq_shl(PFqElement r, PFqElement a, PFqElement b);
-void Fq_shr(PFqElement r, PFqElement a, PFqElement b);
-void Fq_eq(PFqElement r, PFqElement a, PFqElement b);
-void Fq_neq(PFqElement r, PFqElement a, PFqElement b);
-void Fq_lt(PFqElement r, PFqElement a, PFqElement b);
-void Fq_gt(PFqElement r, PFqElement a, PFqElement b);
-void Fq_leq(PFqElement r, PFqElement a, PFqElement b);
-void Fq_geq(PFqElement r, PFqElement a, PFqElement b);
-void Fq_land(PFqElement r, PFqElement a, PFqElement b);
-void Fq_lor(PFqElement r, PFqElement a, PFqElement b);
-void Fq_lnot(PFqElement r, PFqElement a);
-void Fq_toNormal(PFqElement r, PFqElement a);
-void Fq_toLongNormal(PFqElement r, PFqElement a);
+//void Fq_band(PFqElement r, PFqElement a, PFqElement b);
+//void Fq_bor(PFqElement r, PFqElement a, PFqElement b);
+//void Fq_bxor(PFqElement r, PFqElement a, PFqElement b);
+//void Fq_bnot(PFqElement r, PFqElement a);
+//void Fq_shl(PFqElement r, PFqElement a, PFqElement b);
+//void Fq_shr(PFqElement r, PFqElement a, PFqElement b);
+//void Fq_eq(PFqElement r, PFqElement a, PFqElement b);
+//void Fq_neq(PFqElement r, PFqElement a, PFqElement b);
+//void Fq_lt(PFqElement r, PFqElement a, PFqElement b);
+//void Fq_gt(PFqElement r, PFqElement a, PFqElement b);
+//void Fq_leq(PFqElement r, PFqElement a, PFqElement b);
+//void Fq_geq(PFqElement r, PFqElement a, PFqElement b);
+//void Fq_land(PFqElement r, PFqElement a, PFqElement b);
+//void Fq_lor(PFqElement r, PFqElement a, PFqElement b);
+//void Fq_lnot(PFqElement r, PFqElement a);
+//void Fq_toNormal(PFqElement r, PFqElement a);
+//void Fq_toLongNormal(PFqElement r, PFqElement a);
 void Fq_toMontgomery(PFqElement r, PFqElement a);
-
-int Fq_isTrue(PFqElement pE);
-int Fq_toInt(PFqElement pE);
-int32_t Fq_rlt(PFqElement a, PFqElement b);
-int Fq_req(PFqElement r, PFqElement a, PFqElement b);
-int Fq_rgt(PFqElement r, PFqElement a, PFqElement b);
-
-// String and conversion functions
-void Fq_str2element(PFqElement pE, const char* s, unsigned int base);
-char* Fq_element2str(PFqElement pE);
-void Fq_idiv(PFqElement r, PFqElement a, PFqElement b);
-void Fq_mod(PFqElement r, PFqElement a, PFqElement b);
-void Fq_inv(PFqElement r, PFqElement a);
-void Fq_div(PFqElement r, PFqElement a, PFqElement b);
-void Fq_pow(PFqElement r, PFqElement a, PFqElement b);
-
-// Field initialization
-bool Fq_init();
-void Fq_fail();
-void Fq_longErr();
+//
+//int Fq_isTrue(PFqElement pE);
+//int Fq_toInt(PFqElement pE);
+//int32_t Fq_rlt(PFqElement a, PFqElement b);
+//int Fq_req(PFqElement r, PFqElement a, PFqElement b);
+//int Fq_rgt(PFqElement r, PFqElement a, PFqElement b);
+//
+//// String and conversion functions
+//void Fq_str2element(PFqElement pE, const char* s, unsigned int base);
+//char* Fq_element2str(PFqElement pE);
+//void Fq_idiv(PFqElement r, PFqElement a, PFqElement b);
+//void Fq_mod(PFqElement r, PFqElement a, PFqElement b);
+//void Fq_inv(PFqElement r, PFqElement a);
+//void Fq_div(PFqElement r, PFqElement a, PFqElement b);
+//void Fq_pow(PFqElement r, PFqElement a, PFqElement b);
+//
+//// Field initialization
+//bool Fq_init();
+//void Fq_fail();
+//void Fq_longErr();
 
 // Utility functions
 // void Fq_toMpz(mpz_t r, PFqElement pE);
