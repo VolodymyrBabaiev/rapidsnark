@@ -232,6 +232,11 @@ void Fq_Rw_mul_unit_test(void)
     FqRawElement pRawB8 = {0x3c208c16d87cfd47, 0x97816a916871ca8d, 0xb85045b68181585d, 0x30644e72e131a029};
     FqRawElement pRawResult8 = {0x0, 0x0, 0x0, 0x0};
 
+    /* Test case 9 */
+    FqRawElement pRawA9 = {0xd48ef8eb6f0a70a7, 0x83590aa4708b6780, 0x6603a7198a84f5b5, 0x27049057c6edb906};
+    FqRawElement pRawB9 = {0xb1cd6dafda1530df,0x62f210e6a7283db6,0xef7f0b0c0ada0afb,0x20fd6e902d592544};
+    FqRawElement pRawResult9 = {0xba658bb3c5668e7a, 0x8b6747b10d51d35a, 0x871359d9f90f6f90, 0xfd7c8811e0fe4b};
+
     /* Result variables for the actual computations */
     FqRawElement pRawResult0_c = {0};
     FqRawElement pRawResult1_c = {0};
@@ -240,6 +245,7 @@ void Fq_Rw_mul_unit_test(void)
     FqRawElement pRawResult4_c = {0};
     FqRawElement pRawResult5_c = {0};
     FqRawElement pRawResult8_c = {0};
+    FqRawElement pRawResult9_c = {0};
 
     /* Perform the operations */
     Fq_rawMMul(pRawResult0_c, pRawA0, pRawB0);
@@ -249,6 +255,7 @@ void Fq_Rw_mul_unit_test(void)
     Fq_rawMMul(pRawResult4_c, pRawA4, pRawB4);
     Fq_rawMMul(pRawResult5_c, pRawA5, pRawB5);
     Fq_rawMMul(pRawResult8_c, pRawA8, pRawB8);
+    Fq_rawMMul(pRawResult9_c, pRawA9, pRawB9);
 
     /* Compare expected and actual results */
     compare_raw_result(pRawResult0, pRawResult0_c, pRawA0, pRawB0, 0, "Fq_Rw_mul_unit_test");
@@ -258,6 +265,7 @@ void Fq_Rw_mul_unit_test(void)
     compare_raw_result(pRawResult4, pRawResult4_c, pRawA4, pRawB4, 4, "Fq_Rw_mul_unit_test");
     compare_raw_result(pRawResult5, pRawResult5_c, pRawA5, pRawB5, 5, "Fq_Rw_mul_unit_test");
     compare_raw_result(pRawResult8, pRawResult8_c, pRawA8, pRawB8, 8, "Fq_Rw_mul_unit_test");
+    compare_raw_result(pRawResult9, pRawResult9_c, pRawA9, pRawB9, 9, "Fq_Rw_mul_unit_test");
 }
 
 void Fq_Rw_mul1_unit_test(void)
@@ -287,12 +295,19 @@ void Fq_Rw_mul1_unit_test(void)
     FqRawElement pRawB9 = {0x1, 0x0, 0x0, 0x0};
     FqRawElement pRawResult9 = {0x0, 0x0, 0x0, 0x0};
 
+    //Fq_Rw_mul1_test 10:
+    FqRawElement pRawA10= {0xa1f0fac9f8000000, 0x9419f4243cdcb848, 0xdc2822db40c0ac2e, 0x183227397098d014};
+    FqRawElement pRawB10= {0x1bb8,0x0,0x0,0x0};
+    FqRawElement pRawResult10= {0xd48ef8eb6f0a70a7, 0x83590aa4708b6780, 0x6603a7198a84f5b5, 0x27049057c6edb906};
+
+
     /* Result variables for the actual computations */
     FqRawElement pRawResult0_c = {0};
     FqRawElement pRawResult1_c = {0};
     FqRawElement pRawResult2_c = {0};
     FqRawElement pRawResult3_c = {0};
     FqRawElement pRawResult9_c = {0};
+    FqRawElement pRawResult10_c = {0};
 
     /* Perform the operations */
     Fq_rawMMul1(pRawResult0_c, pRawA0, pRawB0[0]);
@@ -300,6 +315,7 @@ void Fq_Rw_mul1_unit_test(void)
     Fq_rawMMul1(pRawResult2_c, pRawA2, pRawB2[0]);
     Fq_rawMMul1(pRawResult3_c, pRawA3, pRawB3[0]);
     Fq_rawMMul1(pRawResult9_c, pRawA9, pRawB9[0]);
+    Fq_rawMMul1(pRawResult10_c, pRawA10, pRawB10[0]);
 
     /* Compare expected and actual results */
     compare_raw_result(pRawResult0, pRawResult0_c, pRawA0, pRawB0, 0, "Fq_Rw_mul1_unit_test");
@@ -307,6 +323,7 @@ void Fq_Rw_mul1_unit_test(void)
     compare_raw_result(pRawResult2, pRawResult2_c, pRawA2, pRawB2, 2, "Fq_Rw_mul1_unit_test");
     compare_raw_result(pRawResult3, pRawResult3_c, pRawA3, pRawB3, 3, "Fq_Rw_mul1_unit_test");
     compare_raw_result(pRawResult9, pRawResult9_c, pRawA9, pRawB9, 9, "Fq_Rw_mul1_unit_test");
+    compare_raw_result(pRawResult10, pRawResult10_c, pRawA10, pRawB10, 10, "Fq_Rw_mul1_unit_test");
 }
 
 
@@ -2032,7 +2049,6 @@ int main(void)
     Fq_square_unit_test();
     Fq_rawCopyS2L_unit_test();
     Fq_Rw_copy_unit_test();
-//    Fq_Rw_add_unit_test();
     Fq_Rw_sub_unit_test();
     Fq_Rw_Neg_unit_test();
     Fq_Rw_Msquare_unit_test();
@@ -2040,6 +2056,7 @@ int main(void)
     Fq_copy_unit_test();
     Fq_copyn_unit_test();
     Fq_neg_unit_test();
+//    Fq_Rw_add_unit_test(); //not implemented
 
     print_results();
 

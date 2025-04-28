@@ -228,7 +228,7 @@ uint64_t mp_sub_n_64(uint64_t *r, const uint64_t *a, const uint64_t *b, size_t n
         diff_high = usubBorrow(diff_high, borrow, &temp_borrow2);
 		borrow = uaddCarry(temp_borrow1, temp_borrow2, &temp_borrow1);
 
-		r[i] = (((uint32_t)diff_high) << 32) | diff_low;
+		r[i] = (((uint64_t)diff_high) << 32) | diff_low;
     }
 
     return borrow;
