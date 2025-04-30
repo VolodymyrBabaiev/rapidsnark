@@ -234,6 +234,42 @@ uint64_t mp_sub_n_64(uint64_t *r, const uint64_t *a, const uint64_t *b, size_t n
     return borrow;
 }
 
+/**
+ * Helper function: Subtract two multi-precision numbers with borrow
+ * a and b must have the same size, result is stored in r
+ * Returns the final borrow (1 if a < b, 0 otherwise)
+ */
+uint64_t mp_sub_1_64(uint64_t *r, const uint64_t *a, size_t n, const uint64_t b) {
+    uint64_t borrow = 0;
+    uint32_t borrow_low = (uint32_t) (b & 0xffffffff);
+    uint32_t borrow_high = (uint32_t) (b >> 32);
+
+    size_t i = 0;
+    while((i < n) && ((borrow_low != 0) || (borrow_high != 0))) {
+        uint32_t a_low = (uint32_t) (a[i] & 0xffffffff);
+        uint32_t a_high = (uint32_t) (a[i] >> 32);
+
+        uint32_t diff_high = 0;
+        uint32_t temp_borrow = 0;
+        uint32_t diff_low = usubBorrow(a_low, borrow_low, &temp_borrow);
+
+        diff_high = usubBorrow(a_high, temp_borrow, &borrow_low);
+        diff_high = usubBorrow(diff_high, borrow_high, &temp_borrow);
+		borrow_low = uaddCarry(temp_borrow, borrow_low, &temp_borrow);
+
+        borrow_high = 0;
+
+		r[i] = (((uint64_t)diff_high) << 32) | diff_low;
+		i++;
+    }
+
+    while(i < n) {
+        r[i] = a[i];
+        i++;
+    }
+
+    return (((uint64_t)borrow_high) << 32) | borrow_low;;
+}
 
 /**
  * Helper function: Multiply a multi-precision number by a single limb

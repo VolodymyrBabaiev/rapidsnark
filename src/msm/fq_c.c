@@ -6,7 +6,6 @@
 #include "fq_c.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include <gmp.h>
 #include <string.h>
 
 // Global field elements
@@ -15,10 +14,6 @@ FqElement Fq_R2 = {0, 0x80000000, {0xf32cfc5b538afa89,0xb5e71911d44501fb,0x47ab1
 FqElement Fq_R3 = {0, 0x80000000, {0xb1cd6dafda1530df,0x62f210e6a7283db6,0xef7f0b0c0ada0afb,0x20fd6e902d592544}};
 
 // Static variables
-static mpz_t q;
-static mpz_t zero;
-static mpz_t one;
-static mpz_t mask;
 static size_t nBits;
 static bool initialized = false;
 FqRawElement half = {0x9e10460b6c3e7ea3,0xcbc0b548b438e546,0xdc2822db40c0ac2e,0x183227397098d014};
