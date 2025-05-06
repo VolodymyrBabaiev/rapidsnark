@@ -1,19 +1,21 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.22)
 
 include(cmake/platform.cmake)
 
 set(USE_ASM    OFF CACHE BOOL "Use asm implementation for Fr and Fq")
 set(USE_C_MSM  ON CACHE BOOL "Use C implementation for Fq")
 set(USE_OPENMP ON CACHE BOOL "Use OpenMP")
+set(USE_VULKAN ON CACHE BOOL "Use Vulkan accelaration")
 
 project(rapidsnark LANGUAGES CXX C ASM)
 
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 message("BITS_PER_CHUNK=" ${BITS_PER_CHUNK})
 message("USE_ASM=" ${USE_ASM})
 message("USE_OPENMP=" ${USE_OPENMP})
+message("USE_VULKAN=" ${USE_VULKAN})
 message("CMAKE_CROSSCOMPILING=" ${CMAKE_CROSSCOMPILING})
 
 message("GMP_PREFIX=" ${GMP_PREFIX})
@@ -31,7 +33,6 @@ endif()
 
 
 include_directories(BEFORE ${GMP_INCLUDE_DIR})
-
 
 if(USE_OPENMP)
     find_package(OpenMP)
@@ -51,19 +52,49 @@ if(USE_OPENMP)
     endif()
 endif()
 
+if(USE_VULKAN)
+    find_package(Vulkan REQUIRED COMPONENTS glslangValidator)
+
+    if(Vulkan_FOUND)
+        message("Vulkan is used")
+
+        if(Vulkan_glslangValidator_FOUND)
+            message("glslangValidator=${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE}")
+        else()
+            message("glslangValidator is not found")
+        endif()
+
+        if(Vulkan_glslc_FOUND)
+            message("glslc=${Vulkan_GLSLC_EXECUTABLE}")
+        else()
+            message("glslc is not found")
+        endif()
+
+    else()
+        message("Vulkan is not used")
+    endif()
+endif()
+
 
 add_subdirectory(src)
 
 
-install(TARGETS prover verifier rapidsnark rapidsnarkStatic rapidsnarkStaticFrFq test_prover fr fq
-    RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin
-    BUNDLE DESTINATION ${CMAKE_INSTALL_PREFIX}/app
-    LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/lib)
+install(TARGETS prover verifier rapidsnark rapidsnarkStatic rapidsnarkStaticFrFq test_prover fr fq)
 
 install(FILES "${GMP_LIB_DIR}/${GMP_LIB_FILE}"
     DESTINATION ${CMAKE_INSTALL_PREFIX}/lib)
 
 install(FILES src/prover.h src/verifier.h
     DESTINATION ${CMAKE_INSTALL_PREFIX}/include)
+
+if(Vulkan_FOUND)
+    install(TARGETS test_perf gpu_test)
+
+    install(FILES src/prover.h src/gpu_test.h
+        DESTINATION ${CMAKE_INSTALL_PREFIX}/include)
+
+    install(FILES ${CMAKE_BINARY_DIR}/src/shader.spv src/shader.comp
+        DESTINATION ${CMAKE_INSTALL_PREFIX}/shader)
+endif()
 
 enable_testing()
