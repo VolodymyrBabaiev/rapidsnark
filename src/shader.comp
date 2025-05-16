@@ -3,8 +3,29 @@
 layout (local_size_x = 128) in;
 
 const int N = 8;
+const uint Fq_N32 = 8;
 
-#define Element uint[N]
+#define Fq_SHORT           0x00000000u
+#define Fq_MONTGOMERY      0x40000000u
+#define Fq_SHORTMONTGOMERY 0x40000000u
+#define Fq_LONG            0x80000000u
+#define Fq_LONGMONTGOMERY  0xC0000000u
+
+// GLSL doesn't have native 64-bit support in most versions
+// So we'll implement 64-bit integers as pairs of 32-bit values
+struct uint64_s {
+    uint lo; // Lower 32 bits
+    uint hi; // Upper 32 bits
+};
+
+const uint Element_size = Fq_N32+2;
+#define Element uint[Element_size]
+
+struct FqElement {
+    int shortVal;
+    uint type;
+    Element longVal;
+};
 
 layout(binding = 0) uniform bufParams {
     uint IterCount;
@@ -15,19 +36,334 @@ layout(binding = 2) buffer  readonly bufB { Element B[]; };
 layout(binding = 3) buffer  bufR          { Element R[]; };
 layout(binding = 4) buffer  bufTemp       { uint    t[]; };
 
-const Element Fq_rawq = {0xd87cfd47,0x3c208c16,0x6871ca8d,0x97816a91,0x8181585d,0xb85045b6,0xe131a029,0x30644e72};
+
+const Element Fq_rawq = {0xd87cfd47, 0x3c208c16, 0x6871ca8d, 0x97816a91, 0x8181585d, 0xb85045b6, 0xe131a029, 0x30644e72, 0x0, 0x0};
+const Element Fq_rawr2 = {0x538afa89, 0xf32cfc5b, 0xd44501fb, 0xb5e71911, 0x0a417ff6, 0x47ab1eff, 0xcab8351f, 0x06d89f71, 0x0, 0x0};
+const Element Fq_r3 = {0xda1530df, 0xb1cd6daf, 0xa7283db6, 0x62f210e6, 0x0ada0afb, 0xef7f0b0c, 0x2d592544, 0x20fd6e90, 0x0, 0x0};
 const uint    Fq_np = 0xe4866389;
+const uint Fq_np_low =  0xe4866389;
+const uint Fq_np_high = 0x87d20782;
 
 #define AssignElement(res, arg, size)     \
     for (int i = 0; i < size; i++) {res[i] = arg[i];}
 
-int mp_cmp(Element a, Element b)
+int mp_cmp(Element a, Element b, uint _N)
 {
-    for (int i = N - 1; i >= 0; i--) {
+    for (uint i = _N - 1; i >= 0; i--) {
         if (a[i] > b[i]) return 1;
         if (a[i] < b[i]) return -1;
     }
     return 0;
+}
+
+void Fq_rawCopy(out Element r, Element a) {
+    r[0] = a[0];
+    r[1] = a[1];
+    r[2] = a[2];
+    r[3] = a[3];
+    r[4] = a[4];
+    r[5] = a[5];
+    r[6] = a[6];
+    r[7] = a[7];
+}
+
+uint64_s int32_to_int64(int value) {
+    uint64_s result;
+
+    // Lower 32 bits are just the original value cast to unsigned
+    result.lo = uint(value);
+
+    // Upper 32 bits depend on the sign of the input
+    if (value < 0) {
+        // For negative numbers, upper 32 bits should be all 1s (0xFFFFFFFF)
+        // This is sign extension for two's complement representation
+        result.hi = 0xFFFFFFFF;
+    } else {
+        // For positive numbers, upper 32 bits are all 0s
+        result.hi = 0x00000000;
+    }
+
+    return result;
+}
+
+void mp_copy(out Element r, uint r_shift, Element a, uint a_shift, uint n){
+    uint top = n + a_shift > Element_size ? Element_size : n + a_shift;
+    uint i = r_shift;
+    uint j = a_shift;
+
+    for (; (i < Element_size) && (j < top); i++, j++) {
+        r[i] = a[j];
+    }
+
+}
+
+/* Math functions*/
+
+// Function to add two 64-bit numbers using 32-bit arithmetic
+// Each 64-bit number is represented as two 32-bit parts: high and low
+// Parameters:
+//   a_low, a_high: First 64-bit number (a_high << 32 | a_low)
+//   b_low, b_high: Second 64-bit number (b_high << 32 | b_low)
+//   result_low, result_high: Output 32-bit parts of the sum
+uint add64(uint a_low, uint a_high, uint b_low, uint b_high, out uint result_low, out uint result_high) {
+    uint carry_from_low;
+    uint carry_from_high;
+    uint carry = 0;
+
+    // Add the low 32-bit parts
+    result_low = uaddCarry(a_low, b_low, carry_from_low);
+
+    // Add the high 32-bit parts plus any carry from the low addition
+    uint temp_high = uaddCarry(a_high, b_high, carry_from_high);
+
+    if(carry_from_high != 0)
+        carry++;
+
+    // Add the carry from low addition to the high result
+    result_high = uaddCarry(temp_high, carry_from_low, carry_from_high);
+
+    if(carry_from_high != 0)
+        carry++;
+
+    // Note: carry_from_high represents overflow beyond 64 bits
+    // If you need to detect 64-bit overflow, check if carry_from_high != 0
+    return carry;
+}
+
+uint add64s(uint64_s a, uint64_s b, out uint64_s r) {
+    uint carry_from_low;
+    uint carry_from_high;
+    uint carry = 0;
+
+    // Add the low 32-bit parts
+    r.lo = uaddCarry(a.lo, b.lo, carry_from_low);
+
+    // Add the high 32-bit parts plus any carry from the low addition
+    uint temp_high = uaddCarry(a.hi, b.hi, carry_from_high);
+
+    if(carry_from_high != 0)
+    carry++;
+
+    // Add the carry from low addition to the high result
+    r.hi = uaddCarry(temp_high, carry_from_low, carry_from_high);
+
+    if(carry_from_high != 0)
+    carry++;
+
+    // Note: carry_from_high represents overflow beyond 64 bits
+    // If you need to detect 64-bit overflow, check if carry_from_high != 0
+
+    return carry;
+}
+
+// Function to subtract two 64-bit numbers using 32-bit arithmetic with usubBorrow
+// Computes a - b where a and b are 64-bit numbers
+// Parameters:
+//   a_low, a_high: First 64-bit number (minuend)
+//   b_low, b_high: Second 64-bit number (subtrahend)
+//   result_low, result_high: Output 32-bit parts of the difference
+uint sub64(uint a_low, uint a_high, uint b_low, uint b_high, out uint result_low, out uint result_high) {
+    uint borrow_from_low;
+    uint borrow_from_high;
+    uint carry = 0;
+
+    // Subtract the low 32-bit parts
+    result_low = usubBorrow(a_low, b_low, borrow_from_low);
+
+    // Subtract the high 32-bit parts minus any borrow from the low subtraction
+    uint temp_high = usubBorrow(a_high, b_high, borrow_from_high);
+    if (borrow_from_high != 0)
+    carry++;
+
+    // Subtract the borrow from low subtraction from the high result
+    result_high = usubBorrow(temp_high, borrow_from_low, borrow_from_high);
+    if (borrow_from_high != 0)
+    carry++;
+
+    return carry;
+}
+
+// Function to subtract two 64-bit numbers using 32-bit arithmetic with usubBorrow
+// Computes a - b where a and b are 64-bit numbers
+// Parameters:
+//   a_low, a_high: First 64-bit number (minuend)
+//   b_low, b_high: Second 64-bit number (subtrahend)
+//   result_low, result_high: Output 32-bit parts of the difference
+uint sub64s(uint64_s a, uint64_s b  , out uint64_s result) {
+    uint borrow_from_low;
+    uint borrow_from_high;
+    uint carry = 0;
+
+    // Subtract the low 32-bit parts
+    result.lo = usubBorrow(a.lo, b.lo, borrow_from_low);
+
+    // Subtract the high 32-bit parts minus any borrow from the low subtraction
+    uint temp_high = usubBorrow(a.hi, b.hi, borrow_from_high);
+    if (borrow_from_high != 0)
+        carry++;
+
+    // Subtract the borrow from low subtraction from the high result
+    result.hi = usubBorrow(temp_high, borrow_from_low, borrow_from_high);
+    if (borrow_from_high != 0)
+        carry++;
+
+    return carry;
+}
+
+
+// Multiply two 64-bit integers to produce a 128-bit result (represented as 4x32-bit values)
+// a and b are 64-bit integers represented as uvec2 (lo, hi)
+// result is 128-bit product represented as uvec4 (lo, mid1, mid2, hi)
+void mul64(uint a_low, uint a_hi, uint b_low, uint b_hi, out uint r[4]) {
+    // Split the multiplication into 4 multiplications of 32-bit integers
+    // a = (a.y << 32) + a.x
+    // b = (b.y << 32) + b.x
+    // a * b = (a.y * b.y << 64) + (a.y * b.x << 32) + (a.x * b.y << 32) + (a.x * b.x)
+
+    uint a_lo_b_lo[2]; // a.x * b.x
+    uint a_lo_b_hi[2]; // a.x * b.y
+    uint a_hi_b_lo[2]; // a.y * b.x
+    uint a_hi_b_hi[2]; // a.y * b.y
+
+    // Use umulExtended for each partial product
+    umulExtended(a_low, b_low, a_lo_b_lo[1], a_lo_b_lo[0]);
+    umulExtended(a_low, b_hi, a_lo_b_hi[1], a_lo_b_hi[0]);
+    umulExtended(a_hi, b_low, a_hi_b_lo[1], a_hi_b_lo[0]);
+    umulExtended(a_hi, b_hi, a_hi_b_hi[1], a_hi_b_hi[0]);
+
+    // Combine all parts to get the 128-bit result
+    uint carry1, carry2, carry3;
+
+    // Lowest 32 bits come directly from a_lo_b_lo.x
+    r[0] = a_lo_b_lo[0];
+
+    // Next 32 bits: a_lo_b_lo.y + low parts of (a_lo_b_hi.x + a_hi_b_lo.x)
+    uint temp = uaddCarry(a_lo_b_hi[0], a_hi_b_lo[0], carry1);
+    r[1] = uaddCarry(a_lo_b_lo[1], temp, carry2);
+
+    // Next 32 bits: a_lo_b_hi.y + a_hi_b_lo.y + a_hi_b_hi.x + carries
+    temp = uaddCarry(a_lo_b_hi[1], a_hi_b_lo[1], carry3);
+    temp = temp + carry1 + carry2; // Add previous carries
+    // Check if adding the carries caused an overflow
+    carry1 = (temp < a_lo_b_hi[1] || (temp == a_lo_b_hi[1] && (carry1 + carry2) > 0u)) ? 1u : 0u;
+    r[2] = uaddCarry(temp, a_hi_b_hi[0], carry2);
+
+    // Highest 32 bits: a_hi_b_hi.y + carries
+    r[3] = a_hi_b_hi[1] + carry1 + carry2;
+}
+
+// Multiply two 64-bit integers to produce a 128-bit result (represented as 4x32-bit values)
+// a and b are 64-bit integers represented as uvec2 (lo, hi)
+// result is 128-bit product represented as uvec4 (lo, mid1, mid2, hi)
+void mul64s(uint64_s a, uint64_s b, out uint64_s r_low, out uint64_s r_high) {
+    // Split the multiplication into 4 multiplications of 32-bit integers
+    // a = (a.y << 32) + a.x
+    // b = (b.y << 32) + b.x
+    // a * b = (a.y * b.y << 64) + (a.y * b.x << 32) + (a.x * b.y << 32) + (a.x * b.x)
+
+    uint a_lo_b_lo[2]; // a.x * b.x
+    uint a_lo_b_hi[2]; // a.x * b.y
+    uint a_hi_b_lo[2]; // a.y * b.x
+    uint a_hi_b_hi[2]; // a.y * b.y
+
+    // Use umulExtended for each partial product
+    umulExtended(a.lo, b.lo, a_lo_b_lo[1], a_lo_b_lo[0]);
+    umulExtended(a.lo, b.hi, a_lo_b_hi[1], a_lo_b_hi[0]);
+    umulExtended(a.hi, b.lo, a_hi_b_lo[1], a_hi_b_lo[0]);
+    umulExtended(a.hi, b.hi, a_hi_b_hi[1], a_hi_b_hi[0]);
+
+    // Combine all parts to get the 128-bit result
+    uint carry1, carry2, carry3;
+
+    // Lowest 32 bits come directly from a_lo_b_lo.x
+    r_low.lo = a_lo_b_lo[0];
+
+    // Next 32 bits: a_lo_b_lo.y + low parts of (a_lo_b_hi.x + a_hi_b_lo.x)
+    uint temp = uaddCarry(a_lo_b_hi[0], a_hi_b_lo[0], carry1);
+    r_low.hi = uaddCarry(a_lo_b_lo[1], temp, carry2);
+
+    // Next 32 bits: a_lo_b_hi.y + a_hi_b_lo.y + a_hi_b_hi.x + carries
+    temp = uaddCarry(a_lo_b_hi[1], a_hi_b_lo[1], carry3);
+    temp = temp + carry1 + carry2; // Add previous carries
+    // Check if adding the carries caused an overflow
+    carry1 = (temp < a_lo_b_hi[1] || (temp == a_lo_b_hi[1] && (carry1 + carry2) > 0u)) ? 1u : 0u;
+    r_high.lo = uaddCarry(temp, a_hi_b_hi[0], carry2);
+
+    // Highest 32 bits: a_hi_b_hi.y + carries
+    r_high.hi = a_hi_b_hi[1] + carry1 + carry2;
+}
+
+/**
+ * Helper function: Add a single limb to a multi-precision number with carry
+ * Result is stored in r
+ * Returns the final carry
+ */
+uint mp_add_1_64(out Element r, Element a, uint n, uint b_low, uint b_high) {
+    //uint64_t carry = b;
+    uint i = 0;
+    uint carry_low = b_low;
+    uint carry_high = b_high;
+
+    for (; i < n && ((carry_low != 0) || (carry_high != 0)); i++, i++) {
+        uint a_low = a[i];
+        uint a_high = a[i+1];
+
+        uint sum_high = 0;
+        uint tmp_carry = 0;
+        uint sum_low = uaddCarry(a_low, carry_low, tmp_carry);
+
+        carry_low = 0;
+        sum_high = uaddCarry(a_high, carry_high, carry_low);
+        sum_high = uaddCarry(sum_high, tmp_carry, tmp_carry);
+
+        if (tmp_carry != 0  ) {
+            carry_low++;
+        }
+
+        //r[i] = (((uint64_t)sum_high) << 32) | sum_low;
+        r[i] = sum_low;
+        r[i+1] = sum_high;
+    }
+
+    while(i < n) {
+    // Just copy the remaining limbs
+        r[i] = a[i];
+        i++;
+    }
+
+    return carry_low;
+}
+
+/**
+ * Helper function: Subtract two multi-precision numbers with borrow
+ * a and b must have the same size, result is stored in r
+ * Returns the final borrow (1 if a < b, 0 otherwise)
+ */
+uint mp_sub_n_64(out Element r, Element a, Element b) {
+    uint borrow = 0;
+
+    for (uint i = 0; i < N; i++, i++) {
+        uint a_low = a[i];
+        uint a_high = a[i+1];
+        uint b_low = b[i];
+        uint b_high = b[i+1];
+
+        uint diff_high = 0;
+        uint temp_borrow1 = 0;
+        uint temp_borrow2 = 0;
+        uint diff_low = usubBorrow(a_low, b_low, temp_borrow1);
+        diff_low = usubBorrow(diff_low, borrow, temp_borrow2);
+        borrow = uaddCarry(temp_borrow1, temp_borrow2, temp_borrow1);
+
+        diff_high = usubBorrow(a_high, b_high, temp_borrow1);
+        diff_high = usubBorrow(diff_high, borrow, temp_borrow2);
+        borrow = uaddCarry(temp_borrow1, temp_borrow2, temp_borrow1);
+
+        r[i] = diff_low;
+        r[i+1] = diff_high;
+    }
+
+    return borrow;
 }
 
 uint mp_sub_n(out Element r, Element a, Element b)
@@ -44,6 +380,46 @@ uint mp_sub_n(out Element r, Element a, Element b)
     return borrow;
 }
 
+/**
+ * Helper function: Subtract two multi-precision numbers with borrow
+ * a and b must have the same size, result is stored in r
+ * Returns the final borrow (1 if a < b, 0 otherwise)
+ */
+uint mp_sub_1_64(out Element r, Element a, uint n, uint64_s b) {
+    uint borrow = 0;
+    uint borrow_low = b.lo;
+    uint borrow_high = b.hi;
+
+    uint i = 0;
+    while((i < n) && ((borrow_low != 0) || (borrow_high != 0))) {
+        uint a_low = a[i];
+        uint a_high = a[i+1];
+
+        uint diff_high = 0;
+        uint temp_borrow = 0;
+        uint diff_low = usubBorrow(a_low, borrow_low, temp_borrow);
+
+        diff_high = usubBorrow(a_high, temp_borrow, borrow_low);
+        diff_high = usubBorrow(diff_high, borrow_high, temp_borrow);
+        borrow_low = uaddCarry(temp_borrow, borrow_low, temp_borrow);
+
+        borrow_high = 0;
+
+        r[i] = diff_low;
+        r[i+1] = diff_high;
+
+        i++;
+        i++;
+    }
+
+    while(i < n) {
+        r[i] = a[i];
+        i++;
+    }
+
+    return  borrow_low;
+}
+
 uint mp_add_n(out Element r, Element a, Element b)
 {
     uint carry = 0;
@@ -55,6 +431,7 @@ uint mp_add_n(out Element r, Element a, Element b)
         r[i] = uaddCarry(r[i], b[i], carry2);
         carry += carry2;
     }
+
     return carry;
 }
 
@@ -76,36 +453,1016 @@ void mp_addmul_1(inout Element r, Element a, uint b, inout uint last)
     last = uaddCarry(last, carry, carry);
 }
 
+/**
+ * Helper function: Multiply a multi-precision number by a single limb
+ * Result is stored in r
+ * Returns the carry
+ */
+uint64_s mp_mul_1_64(Element r, Element a, uint b_low, uint b_high/*, out uint64_s carry*/) {
+    uint carry_high = 0;
+    uint carry_low = 0;
+
+    for (uint i = 0; i < N; i++, i++) {
+        uint mult_low;
+        uint mult_high;
+        uint sum_low = 0;
+        uint sum_high = 0;
+        uint tmp_carry_low = 0;
+        uint tmp_carry_high = 0;
+
+        // Compute the high 64 bits of the product
+        // Split into 32-bit chunks to avoid overflow
+        uint a_low = a[i];
+        uint a_high = a[i + 1];
+
+        //low = a_lo * b_lo;
+        umulExtended(a_low, b_low, mult_high, mult_low);
+        sum_low = uaddCarry(mult_low, carry_low, tmp_carry_low);
+
+        uint cross1_low;
+        uint cross1_high;
+        uint cross2_low;
+        uint cross2_high;
+
+        umulExtended(a_low, b_high, cross1_high, cross1_low);
+        umulExtended(a_high, b_low, cross2_high, cross2_low);
+
+        sum_high = uaddCarry(carry_high, tmp_carry_low, tmp_carry_high);
+
+        carry_low = 0;
+        carry_high = 0;
+
+        if(tmp_carry_high != 0) {
+            carry_low++;
+        }
+
+        sum_high = uaddCarry(sum_high, mult_high, tmp_carry_high);
+        if(tmp_carry_high != 0) {
+            carry_low++;
+        }
+
+        sum_high = uaddCarry(sum_high, cross1_low, tmp_carry_high);
+        if(tmp_carry_high != 0) {
+            carry_low++;
+        }
+
+        sum_high = uaddCarry(sum_high, cross2_low, tmp_carry_high);
+        if(tmp_carry_high != 0) {
+            carry_low++;
+        }
+
+        umulExtended(a_high, b_high, mult_high, mult_low);
+
+        carry_low = uaddCarry(carry_low, mult_low, tmp_carry_low);
+        if(tmp_carry_low != 0) {
+            carry_high++;
+        }
+
+        carry_low = uaddCarry(carry_low, cross1_high, tmp_carry_low);
+        if(tmp_carry_low != 0) {
+            carry_high++;
+        }
+
+        carry_low = uaddCarry(carry_low, cross2_high, tmp_carry_low);
+        if(tmp_carry_low != 0) {
+            carry_high++;
+        }
+
+        carry_high = uaddCarry(carry_high, mult_high, tmp_carry_low);
+
+        //r[i] = (((uint64_t)sum_high) << 32) | sum_low;
+        r[i] = sum_low;
+        r[i] = sum_high;
+    }
+
+    uint64_s carry;
+    carry.lo = carry_low;
+    carry.hi = carry_high;
+
+    return carry;
+}
+
+/**
+ * Helper function: Add two multi-precision numbers with carry, with offsets
+ * a and b must have the same size, result is stored in r
+ * Returns the final carry
+ *
+ * @param r Destination array
+ * @param r_offset Offset in r where to start storing the result
+ * @param a First source array
+ * @param a_offset Offset in a where to start reading
+ * @param b Second source array
+ * @param b_offset Offset in b where to start reading
+ * @param n Number of limbs to add
+ * @return Final carry (0 or 1)
+ */
+uint mp_add_n_64_offset(out Element r, uint r_offset, Element a, uint a_offset,
+Element b, uint b_offset, uint n) {
+    uint carry = 0;
+    for (uint i = 0; i < n; i++, i++) {
+        uint a_low = a[a_offset + i];
+        uint a_high = a[a_offset + i +1];
+        uint b_low = b[b_offset + i];
+        uint b_high = b[b_offset + i +1];
+        uint sum_high = 0;
+        uint tmp_carry_1 = 0;
+        uint tmp_carry_2 = 0;
+        uint sum_low = uaddCarry(a_low, b_low, tmp_carry_1);
+        sum_low = uaddCarry(sum_low, carry, tmp_carry_2);
+
+        carry = 0;
+        sum_high = uaddCarry(a_high, b_high, carry);
+
+        sum_high = uaddCarry(sum_high, tmp_carry_1, tmp_carry_1);
+        if (tmp_carry_1 != 0) {
+            carry++;
+        }
+        tmp_carry_1 = 0;
+
+        sum_high = uaddCarry(sum_high, tmp_carry_2, tmp_carry_1);
+        if (tmp_carry_1 != 0) {
+            carry++;
+        }
+
+        r[r_offset + i] = sum_low;
+        r[r_offset + i + 1] = sum_high;
+    }
+
+    return carry;
+}
+
+/**
+ * Helper function: Add a single limb to a multi-precision number with carry, with offsets
+ * Result is stored in r
+ * Returns the final carry
+ *
+ * @param r Destination array
+ * @param r_offset Offset in r where to start storing the result
+ * @param a Source array
+ * @param a_offset Offset in a where to start reading
+ * @param n Number of limbs to process
+ * @param b Single limb to add
+ * @return Final carry (0 or non-zero)
+ */
+uint mp_add_1_64_offset(Element r, uint r_offset, Element a, uint a_offset,
+                        uint n, uint b_low, uint b_high) {
+    uint i = 0;
+    uint carry_low = b_low;
+    uint carry_high = b_high;
+
+    for (; i < n && ((carry_low != 0) || (carry_high != 0)); i++, i++) {
+        uint a_low = a[a_offset + i];
+        uint a_high = a[a_offset + i +1];
+
+        uint sum_high = 0;
+        uint tmp_carry = 0;
+        uint sum_low = uaddCarry(a_low, carry_low, tmp_carry);
+
+        carry_low = 0;
+        sum_high = uaddCarry(a_high, carry_high, carry_low);
+        sum_high = uaddCarry(sum_high, tmp_carry, tmp_carry);
+
+        if (tmp_carry != 0) {
+            carry_low++;
+        }
+
+        r[r_offset + i] = sum_low;
+        r[r_offset + i + 1] = sum_high;
+    }
+
+    // Copy remaining limbs if different arrays (r != a)
+    if (r != a || r_offset != a_offset) {
+        while (i < n) {
+            r[r_offset + i] = a[a_offset + i];
+            i++;
+        }
+    }
+
+    return carry_low;
+}
+
+/**
+ * Helper function: Multiply a multi-precision number by a single limb and add to another
+ * r += a * b
+ * Returns the final carry
+ */
+uint64_s mp_addmul_1_64(inout Element r, Element a, uint n, uint b_low, uint b_high) {
+    uint carry_high = 0;
+    uint carry_low = 0;
+
+    for (uint i = 0; i < n; i++, i++) {
+        uint mult_low;
+        uint mult_high;
+        uint sum_low = 0;
+        uint sum_high = 0;
+        uint tmp_carry_low = 0;
+        uint tmp_carry_high = 0;
+        uint tmp_carry = 0;
+
+        // Compute the high 64 bits of the product
+        // Split into 32-bit chunks to avoid overflow
+        uint a_low = a[i];
+        uint a_high = a[i+1];
+        uint r_low = r[i];
+        uint r_high = r[i+1];
+
+        //low = a_lo * b_lo;
+        umulExtended(a_low, b_low, mult_high, mult_low);
+        sum_low = uaddCarry(mult_low, carry_low, tmp_carry_low);
+        sum_low = uaddCarry(sum_low, r_low, tmp_carry);
+
+        uint cross1_low;
+        uint cross1_high;
+        uint cross2_low;
+        uint cross2_high;
+
+        umulExtended(a_low, b_high, cross1_high, cross1_low);
+        umulExtended(a_high, b_low, cross2_high, cross2_low);
+
+        sum_high = uaddCarry(carry_high, tmp_carry_low, tmp_carry_high);
+
+        carry_low = 0;
+        carry_high = 0;
+
+        if(tmp_carry_high != 0) {
+            carry_low++;
+        }
+
+        sum_high = uaddCarry(sum_high, tmp_carry, tmp_carry_high);
+        if(tmp_carry_high != 0) {
+            carry_low++;
+        }
+
+        sum_high = uaddCarry(sum_high, mult_high, tmp_carry_high);
+        if(tmp_carry_high != 0) {
+            carry_low++;
+        }
+
+        sum_high = uaddCarry(sum_high, cross1_low, tmp_carry_high);
+        if(tmp_carry_high != 0) {
+            carry_low++;
+        }
+
+        sum_high = uaddCarry(sum_high, cross2_low, tmp_carry_high);
+        if(tmp_carry_high != 0) {
+            carry_low++;
+        }
+
+        sum_high = uaddCarry(sum_high, r_high, tmp_carry_high);
+        if(tmp_carry_high != 0) {
+            carry_low++;
+        }
+
+        umulExtended(a_high, b_high, mult_high, mult_low);
+
+        carry_low = uaddCarry(carry_low, mult_low, tmp_carry_low);
+        if(tmp_carry_low != 0) {
+            carry_high++;
+        }
+
+        carry_low = uaddCarry(carry_low, cross1_high, tmp_carry_low);
+        if(tmp_carry_low != 0) {
+            carry_high++;
+        }
+
+        carry_low = uaddCarry(carry_low, cross2_high, tmp_carry_low);
+        if(tmp_carry_low != 0) {
+            carry_high++;
+        }
+
+        carry_high = uaddCarry(carry_high, mult_high, tmp_carry_low);
+
+        r[i] = sum_low;        //r[i] = (((uint64_t)sum_high) << 32) | sum_low;
+        r[i+1] = sum_high;
+    }
+
+    uint64_s res;
+    res.lo = carry_low;
+    res.hi= carry_high;
+
+    return res;
+}
+
+/**
+ * Helper function: Add one multi-precision number to another, with offsets
+ * r = a + b
+ * a and b can have different sizes
+ *
+ * @param r Destination array
+ * @param r_offset Offset in r where to start storing the result
+ * @param a First source array
+ * @param a_offset Offset in a where to start reading
+ * @param an Number of limbs in a to process
+ * @param b Second source array
+ * @param b_offset Offset in b where to start reading
+ * @param bn Number of limbs in b to process
+ */
+void mp_add_64_offset(Element r, uint r_offset, Element a, uint a_offset, uint an,
+                      Element b, uint b_offset, uint bn) {
+    uint n_common = (an < bn) ? an : bn;
+
+    uint carry = mp_add_n_64_offset(r, r_offset, a, a_offset, b, b_offset, n_common);
+
+    if (an > n_common) {
+        carry = mp_add_1_64_offset(r, r_offset + n_common, a, a_offset + n_common, an - n_common, carry, 0);
+    } else if (bn > n_common) {
+        carry = mp_add_1_64_offset(r, r_offset + n_common, b, b_offset + n_common, bn - n_common, carry, 0);
+    }
+
+    if (carry != 0) {
+        uint result_size = (an >= bn) ? an : bn;
+        r[r_offset + result_size] = carry;
+    }
+}
+
+/* Fq generic*/
+void Fq_rawAddLS(out Element r, Element a, uint64_s b)
+{
+    uint carry = mp_add_1_64(r, a, N, b.lo, b.hi);
+
+    if((carry != 0) || (mp_cmp(r, Fq_rawq, Fq_N32) >= 0))
+    {
+        mp_sub_n_64(r, r, Fq_rawq);
+    }
+}
+
+void Fq_rawSubLS(out Element r, Element a, uint64_s b)
+{
+    uint carry = mp_sub_1_64(r, a, Fq_N32, b);
+
+    if(carry != 0)
+    {
+        mp_add_n_64_offset(r, 0, r, 0, Fq_rawq, 0, Fq_N32);
+    }
+}
+
+void Fq_rawSubSL(out Element r, uint64_s a, Element b)
+{
+    Element _a = {a.lo, a.hi, 0, 0, 0, 0, 0, 0, 0, 0};
+
+    uint carry = mp_sub_n_64(r, _a, b);
+
+    if(carry != 0)
+    {
+        mp_add_n_64_offset(r, 0, r, 0, Fq_rawq, 0, Fq_N32);
+    }
+}
+
+void Fq_rawSub(out Element r, Element a, Element b)
+{
+    uint carry = mp_sub_n_64(r, a, b);
+
+    if(carry != 0)
+    {
+        mp_add_n(r, r, Fq_rawq);
+    }
+}
+
 void Fq_rawAdd(out Element r, Element a, Element b)
 {
     uint carry = mp_add_n(r, a, b);
 
-    if (carry != 0 || mp_cmp(r, Fq_rawq) >= 0) {
+    if (carry != 0 || mp_cmp(r, Fq_rawq, Fq_N32) >= 0) {
         mp_sub_n(r, r, Fq_rawq);
     }
 }
+
+void Fq_rawNeg(out Element r, Element a)
+{
+    Element zero = Element(0,0,0,0,0,0,0,0,0,0);
+
+    if (mp_cmp(a, zero, Fq_N32) != 0)
+    {
+        mp_sub_n_64(r, Fq_rawq, a);
+    }
+    else
+    {
+        Fq_rawCopy(r, zero);
+    }
+}
+
+int Fq_rawIsZero(Element a) {
+    for (int i = 0; i < N; i++) {
+        if (a[i] != 0) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+void Fq_rawCopyS2L(out Element r, uint64_s val)
+{
+    r[0] = val.lo;
+    r[1] = val.hi;
+    r[2] = 0;
+    r[3] = 0;
+    r[4] = 0;
+    r[5] = 0;
+    r[6] = 0;
+    r[7] = 0;
+    r[8] = 0;
+    r[9] = 0;
+
+    // If negative
+    if (val.hi >= 0x80000000u)
+    {
+        r[2] = -1;
+        r[3] = -1;
+        r[4] = -1;
+        r[5] = -1;
+        r[6] = -1;
+        r[7] = -1;
+
+        // Higher 2 bytes is unused
+
+        mp_add_n_64_offset(r, 0, r, 0, Fq_rawq, 0, Fq_N32);
+    }
+}
+
+void Fq_rawNegLS(out Element r, Element a, uint64_s b)
+{
+    uint carry1 = mp_sub_1_64(r, Fq_rawq, Fq_N32, b);
+    uint carry2 = mp_sub_n_64(r, r, a);
+
+    if ((carry1 != 0) || (carry2 != 0))
+    {
+        mp_add_n_64_offset(r, 0, r, 0, Fq_rawq, 0, Fq_N32);
+    }
+}
+
+//void Fq_rawMMul(out Element r, Element a, Element b)
+//{
+//    r = Element(0,0,0,0,0,0,0,0,0,0);
+//
+//    for (int i = 0; i < N; i++) {
+//        uint last = 0;
+//
+//        mp_addmul_1(r, b, a[i], last);
+//        mp_addmul_1(r, Fq_rawq, r[0] * Fq_np, last);
+//
+//        for (int j = 0; j < N-1; j++) {
+//            r[j] = r[j+1];
+//        }
+//        r[N-1] = last;
+//        last = 0;
+//    }
+//
+//    if (mp_cmp(r, Fq_rawq, Fq_N32) >= 0) {
+//        mp_sub_n(r, r, Fq_rawq);
+//    }
+//}
 
 void Fq_rawMMul(out Element r, Element a, Element b)
 {
-    r = Element(0,0,0,0,0,0,0,0);
+    const uint _N = Fq_N32 + 2;
+    uint64_s tmp64;
 
-    for (int i = 0; i < N; i++) {
-        uint last = 0;
+    //uint  np0;
+    uint  np0[4]; // 64-bit integer, usedonly 0 and 1 element. 2 and 3 introduced for multiplicastion
 
-        mp_addmul_1(r, b, a[i], last);
-        mp_addmul_1(r, Fq_rawq, r[0] * Fq_np, last);
+    Element r0 = Element(0,0,0,0,0,0,0,0,0,0);
+    Element r1 = Element(0,0,0,0,0,0,0,0,0,0);
+    Element r2 = Element(0,0,0,0,0,0,0,0,0,0);
+    Element r3 = Element(0,0,0,0,0,0,0,0,0,0);
 
-        for (int j = 0; j < N-1; j++) {
-            r[j] = r[j+1];
-        }
-        r[N-1] = last;
-        last = 0;
-    }
+    tmp64 = mp_mul_1_64(r0, b, a[0], a[1]);  //product0[4] = mp_mul_1_64(product0, pRawB, Fq_N64, pRawA[0]);
+    r0[Fq_N32] = tmp64.lo;
+    r0[Fq_N32 + 1] = tmp64.hi;
 
-    if (mp_cmp(r, Fq_rawq) >= 0) {
-        mp_sub_n(r, r, Fq_rawq);
+    mul64(Fq_np_low, Fq_np_high, r0[0], r0[1], np0);  //np0 = Fq_np_static * product0[0];
+    tmp64 = mp_addmul_1_64(r0, Fq_rawq, Fq_N32, np0[0], np0[1]); //product1[1] = mp_addmul_1_64(product0, Fq_rawq, N, np0);
+    r0[2] = tmp64.lo;
+    r0[3] = tmp64.hi;
+
+    tmp64 = mp_mul_1_64(r1, b, a[2], a[3]);                   //product1[4] = mp_addmul_1_64(product1, pRawB, Fq_N64, pRawA[1]);
+    r1[Fq_N32] = tmp64.lo;
+    r1[Fq_N32 + 1] = tmp64.hi;
+
+    mp_add_64_offset(r1, 0, r1, 0, _N, r0, 2, Fq_N32);             //mp_add_64(product1, product1, N, product0+1, N-1);
+
+    mul64(Fq_np_low, Fq_np_high, r1[0], r1[1], np0);               //np0 = Fq_np_static * product1[0];
+    tmp64 = mp_addmul_1_64(r1, Fq_rawq, Fq_N32, np0[0], np0[1]);   //product2[1] = mp_addmul_1_64(product1, Fq_rawq, N, np0);
+    r2[2] = tmp64.lo;
+    r2[3] = tmp64.hi;
+
+    tmp64 = mp_mul_1_64(r2, b, a[4], a[5]);                        //product2[4] = mp_addmul_1_64(product2, pRawB, Fq_N64, pRawA[2]);
+    r2[Fq_N32] = tmp64.lo;
+    r2[Fq_N32 + 1] = tmp64.hi;
+
+    mp_add_64_offset(r2, 0, r2, 0, _N, r1, 2, Fq_N32);             //mp_add_64(product2, product2, N, product1+1, N-1);
+
+    mul64(Fq_np_low, Fq_np_high, r2[0], r2[1], np0);               //np0 = Fq_np_static * product2[0];
+    tmp64 = mp_addmul_1_64(r2, Fq_rawq, Fq_N32, np0[0], np0[1]);   //product3[1] = mp_addmul_1_64(product2, Fq_rawq, N, np0);
+    r3[2] = tmp64.lo;
+    r3[3] = tmp64.hi;
+
+    tmp64 = mp_mul_1_64(r3, b, a[6], a[7]);                        //product3[4] = mp_addmul_1_64(product3, pRawB, Fq_N64, pRawA[3]);
+    r3[Fq_N32] = tmp64.lo;
+    r3[Fq_N32 + 1] = tmp64.hi;
+
+    mp_add_64_offset(r3, 0, r3, 0, _N, r2, 2, Fq_N32);             //mp_add_64(product3, product3, N, product2+1, N-1);
+
+    mul64(Fq_np_low, Fq_np_high, r3[0], r3[1], np0);               //np0 = Fq_np_static * product3[0];
+    tmp64 = mp_addmul_1_64(r3, Fq_rawq, Fq_N32, np0[0], np0[1]);   //mp_addmul_1_64(product3, Fq_rawq, N, np0);
+
+    mp_copy(r, 0, r3, 1, Fq_N32);
+
+    if (mp_cmp(r, Fq_rawq, Fq_N32) >= 0)
+    {
+        mp_sub_n_64(r, r, Fq_rawq);
     }
 }
+
+void Fq_rawMMul1(Element r, Element a, uint64_s b)
+{
+    const uint _N = Fq_N32 + 2;
+    uint64_s tmp64;
+
+    uint  np0[4]; // 64-bit integer, usedonly 0 and 1 element. 2 and 3 introduced for multiplicastion
+
+    Element r0 = Element(0,0,0,0,0,0,0,0,0,0);
+    Element r1 = Element(0,0,0,0,0,0,0,0,0,0);
+    Element r2 = Element(0,0,0,0,0,0,0,0,0,0);
+    Element r3 = Element(0,0,0,0,0,0,0,0,0,0);
+
+    tmp64 = mp_mul_1_64(r0, a, b.lo, b.hi);//product0[4] = mp_mul_1_64(product0, pRawA, Fq_N64, pRawB);
+    r0[Fq_N32] = tmp64.lo;
+    r0[Fq_N32 + 1] = tmp64.hi;
+
+    //np0 = Fq_np_static * r0[0];
+    mul64(Fq_np_low, Fq_np_high, r0[0], r0[1], np0);    //np0 = Fq_np_static * product0[0];
+    tmp64 = mp_addmul_1_64(r0, Fq_rawq, Fq_N32, np0[0], np0[1]);   //product1[1] = mp_addmul_1_64(product0, mq, Fq_N32, np0);
+    r1[2] = tmp64.lo;
+    r1[3] = tmp64.hi;
+    mp_add_64_offset(r1, 0, r1, 0, _N, r0, 2, Fq_N32);              //mp_add_64_offset(product1, 0, product1, 0, N, product0, 1, N-1);
+
+    mul64(Fq_np_low, Fq_np_high, r1[0], r1[1], np0);             //np0 = Fq_np_static * product1[0];
+    tmp64 = mp_addmul_1_64(r1, Fq_rawq, _N, np0[0], np0[1]);     //product2[1] = mp_addmul_1_64(product1, Fq_rawq, N, np0);
+    r2[2] = tmp64.lo;
+    r2[3] = tmp64.hi;
+    mp_add_64_offset(r2, 0, r2, 0, _N, r1, 2, Fq_N32);              //mp_add_64(product2, product2, N, product1+1, N-1);
+
+    mul64(Fq_np_low, Fq_np_high, r2[0], r2[1], np0);             //np0 = Fq_np_static * product2[0];
+    tmp64 = mp_addmul_1_64(r2, Fq_rawq, _N, np0[0], np0[1]);     //product3[1] = mp_addmul_1_64(product2, Fq_rawq, N, np0);
+    r3[2] = tmp64.lo;
+    r3[3] = tmp64.hi;
+    mp_add_64_offset(r3, 0, r3, 0, _N, r3, 2, Fq_N32);              //mp_add_64(product3, product3, N, product2+1, N-1);
+
+    mul64(Fq_np_low, Fq_np_high, r3[0], r3[1], np0);             //np0 = Fq_np_static * product3[0];
+    tmp64 = mp_addmul_1_64(r3, Fq_rawq, _N, np0[0], np0[1]);    //mp_addmul_1_64(product3, Fq_rawq, N, np0);
+
+    mp_copy(r, 0, r3, 2, Fq_N32);
+
+    if (mp_cmp(r, Fq_rawq, Fq_N32) >= 0)
+    {
+        mp_sub_n_64(r, r, Fq_rawq);
+    }
+}
+
+// Fq functions
+
+void Fq_copy(out FqElement r, FqElement a) {
+    r.type = a.type;
+    r.shortVal = a.shortVal;
+    Fq_rawCopy(r.longVal, a.longVal);
+}
+
+// Convert to Montgomery form
+void Fq_toMontgomery(out FqElement r, FqElement a) {
+    if ((a.type & Fq_MONTGOMERY) != 0) {
+        Fq_copy(r, a);
+    } else if ((a.type & Fq_LONG) != 0) {
+        r.shortVal = a.shortVal;
+        Fq_rawMMul(r.longVal, a.longVal, Fq_rawr2);
+        r.type = Fq_LONGMONTGOMERY;
+    } else if (a.shortVal < 0) {
+        uint64_s a_shortVal = int32_to_int64(-a.shortVal);
+        Fq_rawMMul1(r.longVal, Fq_rawr2, a_shortVal);
+        Fq_rawNeg(r.longVal, r.longVal);
+        r.type = Fq_SHORTMONTGOMERY;
+    } else {
+        uint64_s a_shortVal = int32_to_int64(a.shortVal);
+        Fq_rawMMul1(r.longVal, Fq_rawr2, a_shortVal);
+        r.type = Fq_SHORTMONTGOMERY;
+    }
+}
+
+/**
+ * Addition operation for field elements
+ */
+void Fq_add(out FqElement r, FqElement a, FqElement b)
+{
+    if ((a.type & Fq_LONG) != 0) {
+        if ((b.type & Fq_LONG) != 0) {
+            if ((a.type & Fq_MONTGOMERY) != 0) {
+                if ((b.type & Fq_MONTGOMERY) != 0) {
+                    // Montgomery + Montgomery
+                    r.type = Fq_LONGMONTGOMERY;
+                    Fq_rawAdd(r.longVal, a.longVal, b.longVal);
+                } else {
+                    // Montgomery + Normal
+                    r.type = Fq_LONGMONTGOMERY;
+
+                    // Convert b to Montgomery form
+                    FqElement b_m;
+                    Fq_toMontgomery(b_m, b);
+
+                    Fq_rawAdd(r.longVal, a.longVal, b_m.longVal);
+                }
+            } else {
+                if ((b.type & Fq_MONTGOMERY) != 0) {
+                    // Normal + Montgomery
+                    r.type = Fq_LONGMONTGOMERY;
+
+                    // Convert a to Montgomery form
+                    FqElement a_m;
+                    Fq_toMontgomery(a_m, a);
+
+                    Fq_rawAdd(r.longVal, a_m.longVal, b.longVal);
+                } else {
+                    // Normal + Normal
+                    r.type = Fq_LONG;
+                    Fq_rawAdd(r.longVal, a.longVal, b.longVal);
+                }
+            }
+        } else if ((a.type & Fq_MONTGOMERY) != 0) {
+            // Long Montgomery + Short
+            if ((b.type & Fq_MONTGOMERY) != 0) {
+                // Montgomery + Montgomery
+                r.type = Fq_LONGMONTGOMERY;
+                Fq_rawAdd(r.longVal, a.longVal, b.longVal);
+            } else {
+                // Montgomery + Normal
+                r.type = Fq_LONGMONTGOMERY;
+
+                // Convert b to Montgomery form
+                FqElement b_m;
+                Fq_toMontgomery(b_m, b);
+
+                Fq_rawAdd(r.longVal, a.longVal, b_m.longVal);
+            }
+        } else {
+            // Long Normal + Short
+            r.type = Fq_LONG;
+
+            if (b.shortVal >= 0) {
+                uint64_s b_shortVal = int32_to_int64(b.shortVal);
+                Fq_rawAddLS(r.longVal, a.longVal, b_shortVal);
+            } else {
+                uint64_s b_shortVal = int32_to_int64(-b.shortVal);
+                Fq_rawSubLS(r.longVal, a.longVal, b_shortVal);
+            }
+        }
+    } else if ((b.type & Fq_LONG) != 0) {
+        // Short + Long (commutative, reuse the Long + Short code)
+        if (a.shortVal >= 0) {
+            uint64_s a_shortVal = int32_to_int64(a.shortVal);
+            Fq_rawAddLS(r.longVal, b.longVal, a_shortVal);
+        } else {
+            uint64_s a_shortVal = int32_to_int64(-a.shortVal);
+            Fq_rawSubLS(r.longVal, b.longVal, a_shortVal);
+        }
+    } else {
+        // Short + Short
+        uint64_s sum;
+        uint64_s a_shortVal = int32_to_int64(a.shortVal);
+        uint64_s b_shortVal = int32_to_int64(b.shortVal);
+
+        add64s(a_shortVal, b_shortVal, sum);
+
+        // Check if the result fits in a short value
+        //int64_t signs = (sum >> 31) & 0x3;
+        bool overflow = (sum.hi != 0) || ((sum.lo & 0xA0000000u) != 0);
+
+        if (overflow) {
+            Fq_rawCopyS2L(r.longVal, sum);
+            r.type = Fq_LONG;
+            r.shortVal = 0;
+        } else {
+            r.type = Fq_SHORT;
+            r.shortVal = int(sum.lo);
+        }
+    }
+}
+
+
+/**
+ * Subtraction operation for field elements
+ */
+void Fq_sub(FqElement r, FqElement a, FqElement b)
+{
+    if ((a.type & Fq_LONG) != 0) {
+        if ((b.type & Fq_LONG) != 0) {
+            if ((a.type & Fq_MONTGOMERY) != 0) {
+                if ((b.type & Fq_MONTGOMERY) != 0) {
+                    // Montgomery - Montgomery
+                    r.type = Fq_LONGMONTGOMERY;
+                    Fq_rawSub(r.longVal, a.longVal, b.longVal);
+                } else {
+                    // Montgomery - Normal
+                    r.type = Fq_LONGMONTGOMERY;
+
+                    // Convert b to Montgomery
+                    FqElement b_m;
+                    Fq_toMontgomery(b_m, b);
+
+                    Fq_rawSub(r.longVal, a.longVal, b_m.longVal);
+                }
+            } else if ((b.type & Fq_MONTGOMERY) != 0) {
+            // Normal - Montgomery
+                r.type = Fq_LONGMONTGOMERY;
+
+                // Convert a to Montgomery
+                FqElement a_m;
+                Fq_toMontgomery(a_m, a);
+
+                Fq_rawSub(r.longVal, a_m.longVal, b.longVal);
+            } else {
+                // Normal - Normal
+                r.type = Fq_LONG;
+                Fq_rawSub(r.longVal, a.longVal, b.longVal);
+            }
+        } else if ((a.type & Fq_MONTGOMERY) != 0) {
+            // Long Montgomery - Short
+            if ((b.type & Fq_MONTGOMERY) != 0) {
+                // Montgomery - Montgomery
+                r.type = Fq_LONGMONTGOMERY;
+                Fq_rawSub(r.longVal, a.longVal, b.longVal);
+            } else {
+                // Montgomery - Normal
+                r.type = Fq_LONGMONTGOMERY;
+
+                // Convert b to Montgomery
+                FqElement b_m;
+                Fq_toMontgomery(b_m, b);
+
+
+                Fq_rawSub(r.longVal, a.longVal, b_m.longVal);
+            }
+        } else {
+            // Long Normal - Short
+            r.type = Fq_LONG;
+
+            if (b.shortVal < 0) {
+                uint64_s b_shortVal = int32_to_int64(-b.shortVal);
+                Fq_rawAddLS(r.longVal, a.longVal, b_shortVal);
+            } else {
+                uint64_s b_shortVal = int32_to_int64(b.shortVal);
+                Fq_rawSubLS(r.longVal, a.longVal, b_shortVal);
+            }
+        }
+    } else if ((b.type & Fq_LONG) != 0) {
+        // Short - Long
+        if ((b.type & Fq_MONTGOMERY) != 0) {
+            if ((a.type & Fq_MONTGOMERY) != 0) {                // Montgomery - Montgomery
+                r.type = Fq_LONGMONTGOMERY;
+                Fq_rawSub(r.longVal, a.longVal, b.longVal);
+            } else {
+                // Normal - Montgomery
+                r.type = Fq_LONGMONTGOMERY;
+
+                // Convert a to Montgomery
+                FqElement a_m;
+                Fq_toMontgomery(a_m, a);
+
+                Fq_rawSub(r.longVal, a_m.longVal, b.longVal);
+            }
+        } else {
+            // Short - Long Normal
+            r.type = Fq_LONG;
+
+            if (a.shortVal >= 0) {
+                uint64_s a_shortVal = int32_to_int64(a.shortVal);
+                Fq_rawSubSL(r.longVal, a_shortVal, b.longVal);
+            } else {
+                uint64_s a_shortVal = int32_to_int64(-a.shortVal);
+                Fq_rawNegLS(r.longVal, b.longVal, a_shortVal);
+            }
+        }
+    } else {
+        // Short - Short
+        uint64_s diff;
+        uint64_s a_shortVal = int32_to_int64(a.shortVal);
+        uint64_s b_shortVal = int32_to_int64(b.shortVal);
+
+        //diff = (int64_t)a_shortVal - b_shortVal;
+        sub64s(a_shortVal, b_shortVal, diff);
+
+        // Check if the result fits in a short value
+        //int64_t signs = (diff >> 31) & 0x3;
+        bool overflow = (((diff.lo & 0x80000000u) != 0) || (diff.hi != 0));
+
+        if (overflow) {
+            Fq_rawCopyS2L(r.longVal, diff);
+            r.type = Fq_LONG;
+            r.shortVal = 0;
+        } else {
+            r.type = Fq_SHORT;
+            r.shortVal = int(diff.lo);
+        }
+    }
+}
+
+
+/**
+ * Negation operation for field elements
+ */
+void Fq_neg(FqElement r, FqElement a)
+{
+    if ((a.type & Fq_LONG) != 0) {
+        r.type = a.type;
+        r.shortVal = a.shortVal;
+        Fq_rawNeg(r.longVal, a.longVal);
+    } else {
+        uint64_s a_shortVal = int32_to_int64(-a.shortVal);
+
+        // Check if the result fits in a short value
+        bool overflow = (((a_shortVal.lo & 0x80000000u) != 0) || (a_shortVal.hi != 0));
+
+        if (overflow) {
+            Fq_rawCopyS2L(r.longVal, a_shortVal);
+            r.type = Fq_LONG;
+            r.shortVal = 0;
+        } else {
+            r.type = Fq_SHORT;
+            r.shortVal = int(a_shortVal.lo);
+        }
+    }
+}
+
+
+/**
+ * Multiplication operation for field elements
+ */
+void Fq_mul(FqElement r, FqElement a, FqElement b)
+{
+    if ((a.type & Fq_LONG) != 0) {
+        if ((b.type & Fq_LONG) != 0) {
+            if ((a.type & Fq_MONTGOMERY) != 0) {
+                if ((b.type & Fq_MONTGOMERY) != 0) {
+                    // Montgomery * Montgomery
+                    r.type = Fq_LONGMONTGOMERY;
+                    Fq_rawMMul(r.longVal, a.longVal, b.longVal);
+                } else {
+                    // Montgomery * Normal
+                    r.type = Fq_LONG;
+                    Fq_rawMMul(r.longVal, a.longVal, b.longVal);
+                }
+            } else {
+                if ((b.type & Fq_MONTGOMERY) != 0) {
+                    // Normal * Montgomery
+                    r.type = Fq_LONG;
+                    Fq_rawMMul(r.longVal, a.longVal, b.longVal);
+                } else {
+                    // Normal * Normal
+                    r.type = Fq_LONGMONTGOMERY;
+                    Fq_rawMMul(r.longVal, a.longVal, b.longVal);
+                    Fq_rawMMul(r.longVal, r.longVal, Fq_r3);
+                }
+            }
+        } else if ((a.type & Fq_MONTGOMERY) != 0) {
+            // Long Montgomery * Short
+            if ((b.type & Fq_MONTGOMERY) != 0) {
+                // Montgomery * Montgomery
+                r.type = Fq_LONGMONTGOMERY;
+                Fq_rawMMul(r.longVal, a.longVal, b.longVal);
+            } else {
+                // Montgomery * Normal
+                r.type = Fq_LONG;
+
+                if (b.shortVal < 0) {
+                    uint64_s b_shortVal = int32_to_int64(-b.shortVal);
+                    Fq_rawMMul1(r.longVal, a.longVal, b_shortVal);
+                    Fq_rawNeg(r.longVal, r.longVal);
+                } else {
+                    uint64_s b_shortVal = int32_to_int64(b.shortVal);
+                    Fq_rawMMul1(r.longVal, a.longVal, b_shortVal);
+                }
+            }
+        } else {
+            // Long Normal * Short
+            if ((b.type & Fq_MONTGOMERY) != 0) {
+                // Normal * Montgomery
+                r.type = Fq_LONG;
+                Fq_rawMMul(r.longVal, a.longVal, b.longVal);
+            } else {
+                // Normal * Normal
+                r.type = Fq_LONGMONTGOMERY;
+
+                if (b.shortVal < 0) {
+                    uint64_s b_shortVal = int32_to_int64(- b.shortVal);
+                    Fq_rawMMul1(r.longVal, a.longVal, b_shortVal);
+                    Fq_rawNeg(r.longVal, r.longVal);
+                } else {
+                    uint64_s b_shortVal = int32_to_int64(b.shortVal);
+                    Fq_rawMMul1(r.longVal, a.longVal, b_shortVal);
+                }
+
+                Fq_rawMMul(r.longVal, r.longVal, Fq_r3);
+            }
+        }
+    } else if ((b.type & Fq_LONG) != 0) {
+        // Short * Long
+        if ((a.type & Fq_MONTGOMERY) != 0) {
+            if ((b.type & Fq_MONTGOMERY) != 0) {
+                // Montgomery * Montgomery
+                r.type = Fq_LONGMONTGOMERY;
+                Fq_rawMMul(r.longVal, a.longVal, b.longVal);
+            } else {
+                // Montgomery * Normal
+                r.type = Fq_LONG;
+                Fq_rawMMul(r.longVal, a.longVal, b.longVal);
+            }
+        } else if ((b.type & Fq_MONTGOMERY) != 0) {
+            // Normal * Montgomery
+            r.type = Fq_LONG;
+
+            if (a.shortVal < 0) {
+                uint64_s a_shortVal = int32_to_int64(- a.shortVal);
+                Fq_rawMMul1(r.longVal, b.longVal, a_shortVal);
+                Fq_rawNeg(r.longVal, r.longVal);
+            } else {
+                uint64_s a_shortVal = int32_to_int64(a.shortVal);
+                Fq_rawMMul1(r.longVal, b.longVal, a_shortVal);
+            }
+        } else {
+            // Normal * Normal
+            r.type = Fq_LONGMONTGOMERY;
+
+            if (a.shortVal < 0) {
+                uint64_s a_shortVal = int32_to_int64(- a.shortVal);
+                Fq_rawMMul1(r.longVal, b.longVal, a_shortVal);
+                Fq_rawNeg(r.longVal, r.longVal);
+            } else {
+                uint64_s a_shortVal = int32_to_int64(a.shortVal);
+                Fq_rawMMul1(r.longVal, b.longVal, a_shortVal);
+            }
+
+            Fq_rawMMul(r.longVal, r.longVal, Fq_r3);
+        }
+    } else {
+        // Short * Short
+        uint64_s res_low;
+        uint64_s res_high;
+        uint64_s a_shortVal = int32_to_int64(a.shortVal);
+        uint64_s b_shortVal = int32_to_int64(b.shortVal);
+
+        mul64s(a_shortVal, b_shortVal, res_low, res_high);
+
+        if ((res_low.hi != 0) || ((res_low.lo & 0x80000000u) != 0)) {
+            Fq_rawCopyS2L(r.longVal, res_low);
+            r.type = Fq_LONG;
+            r.shortVal = 0;
+        } else {
+            r.shortVal = int(res_low.lo);
+            r.type = Fq_SHORT;
+
+            Fq_rawCopyS2L(r.longVal, res_low);
+            r.type = Fq_LONG;
+            r.shortVal = 0;
+        }
+    }
+}
+
+void Fq_square(FqElement r, FqElement a)
+{
+    if ((a.type & Fq_LONG) != 0) {
+        if ((a.type & Fq_MONTGOMERY) != 0) {
+            // Montgomery form
+            r.type = Fq_LONGMONTGOMERY;
+            //Fq_rawMSquare(r.longVal, a.longVal);
+            Fq_rawMMul(r.longVal, a.longVal, a.longVal);
+        } else {
+            // Normal form
+            r.type = Fq_LONGMONTGOMERY;
+            //Fq_rawMSquare(r.longVal, a.longVal);
+            Fq_rawMMul(r.longVal, a.longVal, a.longVal);
+            Fq_rawMMul(r.longVal, r.longVal, Fq_r3);
+        }
+    } else {
+        // Short form
+        uint64_s res_low;
+        uint64_s res_high;
+        uint64_s a_shortVal = int32_to_int64(a.shortVal);
+
+        mul64s(a_shortVal, a_shortVal, res_low, res_high);
+
+        if ((res_low.hi != 0) || ((res_low.lo & 0x80000000u) != 0)) {
+            Fq_rawCopyS2L(r.longVal, res_low);
+            r.type = Fq_LONG;
+            r.shortVal = 0;
+        } else {
+            r.shortVal = int(res_low.lo);
+            r.type = Fq_SHORT;
+
+            Fq_rawCopyS2L(r.longVal, res_low);
+            r.type = Fq_LONG;
+            r.shortVal = 0;
+        }
+    }
+}
+
 
 void main() {
     uint x = gl_GlobalInvocationID.x;
@@ -119,5 +1476,5 @@ void main() {
         Fq_rawMMul(r, a, b);
     }
 
-    AssignElement(R[x], r, N);
+    AssignElement(R[x], r, Fq_N32);
 }

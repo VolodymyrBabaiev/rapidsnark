@@ -199,15 +199,15 @@ void Fq_rawMMul1(FqRawElement pRawResult, const FqRawElement pRawA, uint64_t pRa
 
     np0 = Fq_np_static * product0[0];
     product1[1] = mp_addmul_1_64(product0, mq, N, np0);
-    mp_add_64(product1, product1, N, product0+1, N-1);
+    mp_add_64_offset(product1, 0, product1, 0, N, product0, 1, N-1);
 
     np0 = Fq_np_static * product1[0];
     product2[1] = mp_addmul_1_64(product1, mq, N, np0);
-    mp_add_64(product2, product2, N, product1+1, N-1);
+    mp_add_64_offset(product2, 0, product2, 0, N, product1, 1, N-1);
 
     np0 = Fq_np_static * product2[0];
     product3[1] = mp_addmul_1_64(product2, mq, N, np0);
-    mp_add_64(product3, product3, N, product2+1, N-1);
+    mp_add_64_offset(product3, 0, product3, 0, N, product2, 1, N-1);
 
     np0 = Fq_np_static * product3[0];
     mp_addmul_1_64(product3, mq, N, np0);

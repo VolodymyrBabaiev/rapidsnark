@@ -28,6 +28,13 @@ uint64_t mp_sub_1_64(uint64_t *r, const uint64_t *a, size_t n, const uint64_t b)
 uint64_t mp_mul_1_64(uint64_t *r, const uint64_t *a, size_t n, uint64_t b);
 uint64_t mp_addmul_1_64(uint64_t *r, const uint64_t *a, size_t n, uint64_t b);
 
+uint64_t mp_add_n_64_offset(uint64_t *r, size_t r_offset, const uint64_t *a, size_t a_offset,
+                     const uint64_t *b, size_t b_offset, size_t n);
+uint64_t mp_add_1_64_offset(uint64_t *r, size_t r_offset, const uint64_t *a, size_t a_offset,
+                     size_t n, uint64_t b);
+void mp_add_64_offset(uint64_t *r, size_t r_offset, const uint64_t *a, size_t a_offset, size_t an,
+               const uint64_t *b, size_t b_offset, size_t bn);
+
 void convert_64_to_32(uint32_t *r32, const uint64_t *a64, size_t n64);
 void convert_32_to_64(uint64_t *r64, const uint32_t *a32, size_t n64);
 int mp_cmp(const uint64_t *a, const uint64_t *b, size_t n);
