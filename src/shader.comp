@@ -37,10 +37,13 @@ layout(binding = 3) buffer  bufR          { Element R[]; };
 layout(binding = 4) buffer  bufTemp       { uint    t[]; };
 
 
-const Element Fq_rawq = {0xd87cfd47, 0x3c208c16, 0x6871ca8d, 0x97816a91, 0x8181585d, 0xb85045b6, 0xe131a029, 0x30644e72, 0x0, 0x0};
-const Element Fq_rawr2 = {0x538afa89, 0xf32cfc5b, 0xd44501fb, 0xb5e71911, 0x0a417ff6, 0x47ab1eff, 0xcab8351f, 0x06d89f71, 0x0, 0x0};
-const Element Fq_r3 = {0xda1530df, 0xb1cd6daf, 0xa7283db6, 0x62f210e6, 0x0ada0afb, 0xef7f0b0c, 0x2d592544, 0x20fd6e90, 0x0, 0x0};
-const uint    Fq_np = 0xe4866389;
+const Element Fq_rawq = {0xd87cfd47, 0x3c208c16, 0x6871ca8d, 0x97816a91, 0x8181585d, 0xb85045b6, 0xe131a029, 0x30644e72, 0x00, 0x00};
+const Element Fq_rawr2 = {0x538afa89, 0xf32cfc5b, 0xd44501fb, 0xb5e71911, 0x0a417ff6, 0x47ab1eff, 0xcab8351f, 0x06d89f71, 0x00, 0x00};
+const Element Fq_r3 = {0xda1530df, 0xb1cd6daf, 0xa7283db6, 0x62f210e6, 0x0ada0afb, 0xef7f0b0c, 0x2d592544, 0x20fd6e90, 0x00, 0x00};
+const FqElement Fq_zero = {0, Fq_LONGMONTGOMERY, {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}};
+const FqElement Fq_one = {0, Fq_LONGMONTGOMERY, {0xc58f0d9d, 0xd35d438d, 0xf5c70b3d, 0x0a78eb28, 0x7879462c, 0x666ea36f, 0x9a07df2f, 0x0e0a77c1, 0x00, 0x00}};
+const FqElement Fq_negone = {0, Fq_LONGMONTGOMERY, {0x12edefaa, 0x68c34889, 0x72aabf4f, 0x8d087f68, 0x09081231, 0x51e1a247, 0x4729c0fa, 0x2259d6b1, 0x00, 0x00}};
+const uint Fq_np = 0xe4866389;
 const uint Fq_np_low =  0xe4866389;
 const uint Fq_np_high = 0x87d20782;
 
@@ -65,6 +68,10 @@ void Fq_rawCopy(out Element r, Element a) {
     r[5] = a[5];
     r[6] = a[6];
     r[7] = a[7];
+}
+
+bool Fq_rawIsEq(Element a, const Element b) {
+    return mp_cmp(a, b, Fq_N32) == 0;
 }
 
 uint64_s int32_to_int64(int value) {
@@ -841,14 +848,42 @@ void Fq_rawNeg(out Element r, Element a)
     }
 }
 
-int Fq_rawIsZero(Element a) {
+bool Fq_rawIsZero(Element a) {
     for (int i = 0; i < N; i++) {
         if (a[i] != 0) {
-            return 0;
+            return false;
         }
     }
 
-    return 1;
+    return true;
+}
+
+void Fq_rawCopyS2L32(out Element r, int val)
+{
+    r[0] = val;
+    r[1] = 0;
+    r[2] = 0;
+    r[3] = 0;
+    r[4] = 0;
+    r[5] = 0;
+    r[6] = 0;
+    r[7] = 0;
+    r[8] = 0;
+    r[9] = 0;
+
+    // If negative
+    if (val < 0) {
+        r[1] = -1;
+        r[2] = -1;
+        r[3] = -1;
+        r[4] = -1;
+        r[5] = -1;
+        r[6] = -1;
+        r[7] = -1;
+
+        // Higher 2 bytes is unused
+        mp_add_n_64_offset(r, 0, r, 0, Fq_rawq, 0, Fq_N32);
+    }
 }
 
 void Fq_rawCopyS2L(out Element r, uint64_s val)
@@ -986,31 +1021,31 @@ void Fq_rawMMul1(Element r, Element a, uint64_s b)
     Element r2 = Element(0,0,0,0,0,0,0,0,0,0);
     Element r3 = Element(0,0,0,0,0,0,0,0,0,0);
 
-    tmp64 = mp_mul_1_64(r0, a, b.lo, b.hi);//product0[4] = mp_mul_1_64(product0, pRawA, Fq_N64, pRawB);
+    tmp64 = mp_mul_1_64(r0, a, b.lo, b.hi);                      //product0[4] = mp_mul_1_64(product0, pRawA, Fq_N64, pRawB);
     r0[Fq_N32] = tmp64.lo;
     r0[Fq_N32 + 1] = tmp64.hi;
 
     //np0 = Fq_np_static * r0[0];
-    mul64(Fq_np_low, Fq_np_high, r0[0], r0[1], np0);    //np0 = Fq_np_static * product0[0];
-    tmp64 = mp_addmul_1_64(r0, Fq_rawq, Fq_N32, np0[0], np0[1]);   //product1[1] = mp_addmul_1_64(product0, mq, Fq_N32, np0);
+    mul64(Fq_np_low, Fq_np_high, r0[0], r0[1], np0);             //np0 = Fq_np_static * product0[0];
+    tmp64 = mp_addmul_1_64(r0, Fq_rawq, Fq_N32, np0[0], np0[1]); //product1[1] = mp_addmul_1_64(product0, mq, Fq_N32, np0);
     r1[2] = tmp64.lo;
     r1[3] = tmp64.hi;
-    mp_add_64_offset(r1, 0, r1, 0, _N, r0, 2, Fq_N32);              //mp_add_64_offset(product1, 0, product1, 0, N, product0, 1, N-1);
+    mp_add_64_offset(r1, 0, r1, 0, _N, r0, 2, Fq_N32);           //mp_add_64_offset(product1, 0, product1, 0, N, product0, 1, N-1);
 
     mul64(Fq_np_low, Fq_np_high, r1[0], r1[1], np0);             //np0 = Fq_np_static * product1[0];
     tmp64 = mp_addmul_1_64(r1, Fq_rawq, _N, np0[0], np0[1]);     //product2[1] = mp_addmul_1_64(product1, Fq_rawq, N, np0);
     r2[2] = tmp64.lo;
     r2[3] = tmp64.hi;
-    mp_add_64_offset(r2, 0, r2, 0, _N, r1, 2, Fq_N32);              //mp_add_64(product2, product2, N, product1+1, N-1);
+    mp_add_64_offset(r2, 0, r2, 0, _N, r1, 2, Fq_N32);           //mp_add_64(product2, product2, N, product1+1, N-1);
 
     mul64(Fq_np_low, Fq_np_high, r2[0], r2[1], np0);             //np0 = Fq_np_static * product2[0];
     tmp64 = mp_addmul_1_64(r2, Fq_rawq, _N, np0[0], np0[1]);     //product3[1] = mp_addmul_1_64(product2, Fq_rawq, N, np0);
     r3[2] = tmp64.lo;
     r3[3] = tmp64.hi;
-    mp_add_64_offset(r3, 0, r3, 0, _N, r3, 2, Fq_N32);              //mp_add_64(product3, product3, N, product2+1, N-1);
+    mp_add_64_offset(r3, 0, r3, 0, _N, r3, 2, Fq_N32);           //mp_add_64(product3, product3, N, product2+1, N-1);
 
     mul64(Fq_np_low, Fq_np_high, r3[0], r3[1], np0);             //np0 = Fq_np_static * product3[0];
-    tmp64 = mp_addmul_1_64(r3, Fq_rawq, _N, np0[0], np0[1]);    //mp_addmul_1_64(product3, Fq_rawq, N, np0);
+    tmp64 = mp_addmul_1_64(r3, Fq_rawq, _N, np0[0], np0[1]);     //mp_addmul_1_64(product3, Fq_rawq, N, np0);
 
     mp_copy(r, 0, r3, 2, Fq_N32);
 
@@ -1026,6 +1061,19 @@ void Fq_copy(out FqElement r, FqElement a) {
     r.type = a.type;
     r.shortVal = a.shortVal;
     Fq_rawCopy(r.longVal, a.longVal);
+}
+
+bool Fq_eq(FqElement a, FqElement b) {
+    return Fq_rawIsEq(a.longVal, b.longVal);
+}
+
+bool Fq_isZero(FqElement a)
+{
+    if ((a.type & Fq_LONG) != 0) {
+        return Fq_rawIsZero(a.longVal);
+    } else {
+        return (a.shortVal == 0);
+    }
 }
 
 // Convert to Montgomery form
@@ -1045,6 +1093,23 @@ void Fq_toMontgomery(out FqElement r, FqElement a) {
         uint64_s a_shortVal = int32_to_int64(a.shortVal);
         Fq_rawMMul1(r.longVal, Fq_rawr2, a_shortVal);
         r.type = Fq_SHORTMONTGOMERY;
+    }
+}
+
+void Fq_toLongNormal(out FqElement r, FqElement a)
+{
+    if ((a.type & Fq_LONG) != 0)
+    {
+        if ((a.type & Fq_MONTGOMERY) != 0) {
+            Fq_rawMMul(r.longVal, a.longVal, Fq_rawr2);
+            r.type = Fq_LONG;
+        } else {
+            Fq_copy(r, a);
+        }
+    } else {
+        Fq_rawCopyS2L32(r.longVal, a.shortVal);
+        r.type = Fq_LONG;
+        r.shortVal = 0;
     }
 }
 
@@ -1146,6 +1211,58 @@ void Fq_add(out FqElement r, FqElement a, FqElement b)
     }
 }
 
+bool Fq_eq(FqElement r, FqElement a, FqElement b)
+{
+    bool result;
+
+    if ((a.type & Fq_LONG) != 0) {
+        if ((b.type & Fq_LONG) != 0) {
+            if ((a.type & Fq_MONTGOMERY) != 0) {
+                if ((b.type & Fq_MONTGOMERY) != 0) {
+                    result = Fq_rawIsEq(a.longVal, b.longVal);
+                } else {
+                    FqElement b_m;
+                    Fq_toMontgomery(b_m, b);
+
+                    result = Fq_rawIsEq(a.longVal, b_m.longVal);
+                }
+            } else if ((b.type & Fq_MONTGOMERY) != 0) {
+                FqElement a_m;
+                Fq_toMontgomery(a_m, a);
+
+                result = Fq_rawIsEq(a_m.longVal, b.longVal);
+            } else {
+                result = Fq_rawIsEq(a.longVal, b.longVal);
+            }
+        } else if ((a.type & Fq_MONTGOMERY) != 0){
+            FqElement b_m;
+            Fq_toMontgomery(b_m, b);
+
+            result = Fq_rawIsEq(a.longVal, b_m.longVal);
+        } else {
+            FqElement b_n;
+            Fq_toLongNormal(b_n, b);
+
+            result = Fq_rawIsEq(a.longVal, b_n.longVal);
+        }
+    } else if ((b.type & Fq_LONG) != 0) {
+        if ((b.type & Fq_MONTGOMERY) != 0) {
+            FqElement a_m;
+            Fq_toMontgomery(a_m, a);
+
+            result = Fq_rawIsEq(a_m.longVal, b.longVal);
+        } else {
+            FqElement a_n;
+            Fq_toLongNormal(a_n, a);
+
+            result = Fq_rawIsEq(a_n.longVal, b.longVal);
+        }
+    } else {
+        result = (a.shortVal == b.shortVal);
+    }
+
+    return result;
+}
 
 /**
  * Subtraction operation for field elements
@@ -1295,7 +1412,7 @@ void Fq_neg(FqElement r, FqElement a)
 /**
  * Multiplication operation for field elements
  */
-void Fq_mul(FqElement r, FqElement a, FqElement b)
+void Fq_mul(out FqElement r, FqElement a, FqElement b)
 {
     if ((a.type & Fq_LONG) != 0) {
         if ((b.type & Fq_LONG) != 0) {
@@ -1463,6 +1580,144 @@ void Fq_square(FqElement r, FqElement a)
     }
 }
 
+/* G2 Functions*/
+const uint nr_is_zero = 0;
+const uint nr_is_one = 1;
+const uint nr_is_negone = 2;
+const uint nr_is_long = 3;
+
+struct G2_Element {
+    FqElement a;
+    FqElement b;
+};
+
+struct G2_Field {
+    uint nr_type;
+    FqElement nr;
+    G2_Element fOne;
+    G2_Element fZero;
+    G2_Element fNegOne;
+};
+
+void g2_init_field(out G2_Field field,FqElement anr) {
+    Fq_copy(field.nr, anr);
+    Fq_copy(field.fZero.a, Fq_zero);
+    Fq_copy(field.fZero.b, Fq_zero);
+    Fq_copy(field.fOne.a, Fq_one);
+    Fq_copy(field.fOne.b, Fq_zero);
+    Fq_copy(field.fNegOne.a, Fq_negone);
+    Fq_copy(field.fNegOne.b, Fq_zero);
+
+    if (Fq_isZero(field.nr)) {
+        field.nr_type = nr_is_zero;
+    } else if (Fq_eq(field.nr, Fq_one)) {
+        field.nr_type = nr_is_one;
+    } else if (Fq_eq(field.nr, Fq_negone)) {
+        field.nr_type = nr_is_negone;
+    } else {
+        field.nr_type = nr_is_long;
+    }
+}
+
+//mulByNr
+void g2_mulByNr(out FqElement r, FqElement a, G2_Field field) {
+    switch (field.nr_type) {
+        case nr_is_zero: Fq_copy(r, Fq_zero); break;
+        case nr_is_one: Fq_copy(r, a); break;
+        case nr_is_negone: Fq_neg(r, a); break;
+        case nr_is_long: Fq_mul(r, field.nr, a);
+    }
+}
+
+void g2_add(out G2_Element r, G2_Element a, G2_Element b) {
+    Fq_add(r.a, a.a, b.a);
+    Fq_add(r.b, a.b, b.b);
+}
+
+void g2_sub(out G2_Element r, G2_Element a, G2_Element b) {
+    Fq_sub(r.a, a.a, b.a);
+    Fq_sub(r.b, a.b, b.b);
+}
+
+//mul
+void g2_mul(out G2_Element r, G2_Element e1, G2_Element e2, G2_Field field) {
+    FqElement aa;
+    Fq_mul(aa, e1.a, e2.a);
+    FqElement bb;
+    Fq_mul(bb, e1.b, e2.b);
+
+    FqElement bbr;
+    g2_mulByNr(bbr, bb, field);
+
+    FqElement sum1, sum2;
+    Fq_add(sum1, e1.a, e1.b);
+    Fq_add(sum2, e2.a, e2.b);
+
+    Fq_add(r.a, aa, bbr);
+
+    Fq_mul(r.b, sum1, sum2);
+    Fq_sub(r.b, r.b, aa);
+    Fq_sub(r.b, r.b, bb);
+}
+
+//square
+void g2_square(out G2_Element r, G2_Element e1, G2_Field field) {
+    FqElement ab;
+    FqElement tmp1, tmp2;
+
+    if (field.nr_type == nr_is_negone) {
+        Fq_mul(ab, e1.a, e1.b);
+
+        Fq_add(tmp1, e1.a, e1.b);
+        Fq_sub(tmp2, e1.a, e1.b);
+
+        Fq_mul(r.a, tmp1, tmp2);
+        Fq_add(r.b, ab, ab);
+    } else {
+        Fq_mul(ab, e1.a, e1.b);
+
+        Fq_add(tmp1, e1.a, e1.b);
+        g2_mulByNr(tmp2, e1.b, field);
+        Fq_add(tmp2, e1.a, tmp1);
+
+        Fq_mul(tmp1, tmp1, tmp2);
+
+        g2_mulByNr(tmp2, ab, field);
+        Fq_add(tmp2, ab, tmp2);
+
+        Fq_sub(r.a, tmp1, tmp2);
+        Fq_add(r.b, ab, ab);
+    }
+}
+
+//isZero
+bool g2_isZero(G2_Element a) {
+    return Fq_isZero(a.a) && Fq_isZero(a.b);
+}
+
+void g2_copy(out G2_Element r, G2_Element a) {
+    Fq_copy(r.a, a.a);
+    Fq_copy(r.b, a.b);
+}
+
+void g2_neg(out G2_Element r, G2_Element a) {
+    Fq_neg(r.a, a.a);
+    Fq_neg(r.b, a.b);
+}
+
+void g2_dbl(G2_Element r, G2_Element a) {
+    Fq_add(r.a, a.a, a.a);
+    Fq_add(r.b, a.b, a.b);
+}
+
+//One
+bool g2_isOne(G2_Element a) {
+    return Fq_eq(a.a, Fq_one) && Fq_isZero(a.b);
+}
+
+bool g2_eq(G2_Element a, G2_Element b) {
+    return Fq_eq(a.a, b.a) && Fq_eq(a.b, b.b);
+}
 
 void main() {
     uint x = gl_GlobalInvocationID.x;
