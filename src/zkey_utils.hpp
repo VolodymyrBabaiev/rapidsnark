@@ -5,6 +5,8 @@
 #include <memory>
 
 #include "binfile_utils.hpp"
+#include "binfile_writer.hpp"
+
 
 namespace ZKeyUtils {
 
@@ -34,6 +36,12 @@ namespace ZKeyUtils {
     };
 
     std::unique_ptr<Header> loadHeader(BinFileUtils::BinFile *f);
+	void saveHeader(BinFileUtils::BinFileWriter &writer, const Header& header);
+	void savePointsG1(BinFileUtils::BinFileWriter &writer, void *data,  uint32_t nPoints, uint32_t section);
+	void savePointsG2(BinFileUtils::BinFileWriter &writer, void *data,  uint32_t nPoints, uint32_t section);
+	void saveCoefs(BinFileUtils::BinFileWriter &writer, void *data,  uint32_t num, uint32_t section);
+	void readPointsG1(BinFileUtils::BinFile& binFile, void *data, uint32_t nPoints, uint32_t section);
+	void readPointsG2(BinFileUtils::BinFile& binFile, void *data, uint32_t nPoints, uint32_t section);
 }
 
 #endif // ZKEY_UTILS_H
