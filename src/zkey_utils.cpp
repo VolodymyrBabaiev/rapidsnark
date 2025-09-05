@@ -3,6 +3,9 @@
 #include <iostream>
 
 #include "zkey_utils.hpp"
+#include "groth16.hpp"
+#include "alt_bn128.hpp"
+
 
 namespace ZKeyUtils {
 
@@ -49,78 +52,11 @@ std::unique_ptr<Header> loadHeader(BinFileUtils::BinFile *f) {
     h->vk_delta2 = f->read(h->n8q*4);
     f->endReadSection();
 
-    h->nCoefs = f->getSectionSize(4) / (12 + h->n8r);
+	f->startReadSection(4);
+	h->nCoefs = f->readU32LE();
+	f->endReadSection(false);
 
     return h;
-}
-
-void saveHeader(BinFileUtils::BinFileWriter &writer, const Header& header) {
-    // Section 1: Protocol
-    writer.startSection(1);
-    writer.writeU32LE(1); // protocol = 1 for groth16
-    writer.endSection();
-
-    // Section 2: Header data
-    writer.startSection(2);
-
-    // Write n8q and qPrime
-    writer.writeU32LE(header.n8q);
-
-    // Export qPrime to bytes and write
-    size_t qPrimeSize = (mpz_sizeinbase(header.qPrime, 2) + 7) / 8; // Size in bytes
-    if (qPrimeSize != header.n8q) {
-        throw std::invalid_argument("qPrime size mismatch with n8q");
-    }
-
-    std::vector<uint8_t> qPrimeBytes(header.n8q);
-    size_t exportedBytes;
-    mpz_export(qPrimeBytes.data(), &exportedBytes, -1, 1, -1, 0, header.qPrime);
-    if (exportedBytes != header.n8q) {
-        // Pad with zeros if needed
-        if (exportedBytes < header.n8q) {
-            std::memmove(qPrimeBytes.data() + (header.n8q - exportedBytes),
-                        qPrimeBytes.data(), exportedBytes);
-            std::memset(qPrimeBytes.data(), 0, header.n8q - exportedBytes);
-        }
-    }
-    writer.write(qPrimeBytes.data(), header.n8q);
-
-
-    // Write n8r and rPrime
-    writer.writeU32LE(header.n8r);
-
-    // Export rPrime to bytes and write
-    size_t rPrimeSize = (mpz_sizeinbase(header.rPrime, 2) + 7) / 8; // Size in bytes
-    if (rPrimeSize != header.n8r) {
-        throw std::invalid_argument("rPrime size mismatch with n8r");
-    }
-
-    std::vector<uint8_t> rPrimeBytes(header.n8r);
-    mpz_export(rPrimeBytes.data(), &exportedBytes, -1, 1, -1, 0, header.rPrime);
-    if (exportedBytes != header.n8r) {
-        // Pad with zeros if needed
-        if (exportedBytes < header.n8r) {
-            std::memmove(rPrimeBytes.data() + (header.n8r - exportedBytes),
-                        rPrimeBytes.data(), exportedBytes);
-            std::memset(rPrimeBytes.data(), 0, header.n8r - exportedBytes);
-        }
-    }
-    writer.write(rPrimeBytes.data(), header.n8r);
-
-    // Write circuit parameters
-    writer.writeU32LE(header.nVars);
-    writer.writeU32LE(header.nPublic);
-    writer.writeU32LE(header.domainSize);
-
-    // Write verification key components
-    writer.write(header.vk_alpha1, header.n8q * 2);  // G1 point: 2 * n8q
-    writer.write(header.vk_beta1, header.n8q * 2);   // G1 point: 2 * n8q
-    writer.write(header.vk_beta2, header.n8q * 4);   // G2 point: 4 * n8q
-    writer.write(header.vk_gamma2, header.n8q * 4);  // G2 point: 4 * n8q
-    writer.write(header.vk_delta1, header.n8q * 2);  // G1 point: 2 * n8q
-    writer.write(header.vk_delta2, header.n8q * 4);  // G2 point: 4 * n8q
-
-    writer.endSection();
 }
 
 bool isZero(uint8_t *data) {
@@ -200,6 +136,17 @@ void savePointsG2(BinFileUtils::BinFileWriter &writer, void *data,  uint32_t nPo
 	std::cout<<"Points num : "<< nPoints << std::endl;
 
 	writer.endSection();
+}
+
+void copySection(BinFileUtils::BinFileWriter &writer, void *data,  uint32_t size, uint32_t section) {
+	writer.startSection(section);
+	writer.write(data, size);
+	writer.endSection();
+}
+
+void copyHeader(BinFileUtils::BinFileWriter &writer, BinFileUtils::BinFile &binFile) {
+	copySection(writer, binFile.getSectionData(1), binFile.getSectionSize(1), 1);
+	copySection(writer, binFile.getSectionData(2), binFile.getSectionSize(2), 2);
 }
 
 void saveCoefs(BinFileUtils::BinFileWriter &writer, void *data,  uint32_t size, uint32_t section) {
@@ -303,6 +250,94 @@ void readPointsG2(BinFileUtils::BinFile& binFile, void *data, uint32_t nPoints, 
             pos += 32;
         }
     }
+}
+
+struct Coef {
+    uint32_t m;
+    uint32_t c;
+    uint32_t s;
+    uint8_t data[32];
+};
+
+struct coef_opt {
+    uint32_t c;
+    uint32_t s;
+};
+
+// Using std::array for the key - no dynamic allocation needed
+using Coef_t = std::array<uint8_t, 32>;
+
+// Alternative hash function using FNV-1a algorithm (faster)
+struct CoefHashFNV {
+    std::size_t operator()(const Coef_t& key) const noexcept {
+        const std::size_t FNV_OFFSET_BASIS = 14695981039346656037ULL;
+        const std::size_t FNV_PRIME = 1099511628211ULL;
+
+        std::size_t hash = FNV_OFFSET_BASIS;
+        for (uint8_t byte : key) {
+            hash ^= byte;
+            hash *= FNV_PRIME;
+        }
+        return hash;
+    }
+};
+
+void optimizeCoefs(BinFileUtils::BinFileWriter &writer, void *sectionData,  uint32_t sectionSize, uint32_t section) {
+    // Cast the output data pointer to uint32_t for easier access
+	uint32_t coefNum = *static_cast<uint32_t*>(sectionData);
+	uint32_t* data = static_cast<uint32_t*>(sectionData);
+
+    uint64_t pos = 4;  // Position in section data
+
+	std::unordered_map<Coef_t, std::vector<coef_opt>, CoefHashFNV> optimizedCoefs;
+	std::vector<Coef_t> inclusionOrder;
+	Coef_t coef_key;
+
+    for (int i = 0; i < coefNum; i++) {
+        if (pos >= sectionSize) {
+            throw std::runtime_error("Unexpected end of section data while reading coefs");
+        }
+
+        if (pos + 44 > sectionSize) {
+            throw std::runtime_error("Unexpected end of section data while reading coef component");
+        }
+
+		Coef* pcoef = reinterpret_cast<Coef*>(data + pos);
+		uint32_t packed_c = pcoef->m ? pcoef->c | 0x80000000 : pcoef->c;
+		memcpy(coef_key.data(), pcoef->data, 32);
+		if (optimizedCoefs.find(coef_key) == optimizedCoefs.end())
+			inclusionOrder.push_back(coef_key);
+		optimizedCoefs[coef_key].push_back({packed_c, pcoef->s});
+
+        pos += 44;
+    }
+
+	writer.startSection(section);
+	// Overall coefficient number - 4 bytes
+	writer.writeU32LE(coefNum);
+
+	// Unique coef value number - 4 bytes
+	writer.writeU32LE(optimizedCoefs.size());
+	uint32_t coef_num = 0;
+
+	// Store unique coef values
+	for (auto& key : inclusionOrder) {
+		writer.write(key.data(), 32);
+		coef_num += optimizedCoefs[key].size();
+		writer.writeU32LE(coef_num);
+	}
+
+	// Store coefs parameters
+	for (auto& key : inclusionOrder) {
+		std::vector<coef_opt>& opt_vec = optimizedCoefs[key];
+		for (auto& opt : opt_vec) {
+			writer.writeU32LE(opt.c);
+			writer.writeU32LE(opt.s);
+		}
+	}
+
+
+	writer.endSection();
 }
 
 } // namespace

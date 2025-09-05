@@ -88,6 +88,7 @@ set(LIB_SOURCES
     zkey_utils.cpp
     wtns_utils.hpp
     wtns_utils.cpp
+    coef_storage_interface.hpp
     logger.hpp
     logger.cpp
     fileloader.cpp
