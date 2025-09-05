@@ -12,6 +12,8 @@
 #include "fileloader.hpp"
 #include "binfile_writer.hpp"
 #include "memory.h"
+#include "zkey_coef_storage.hpp"
+#include "zkop_coef_storage.hpp"
 
 using json = nlohmann::json;
 
@@ -129,6 +131,7 @@ class Groth16Prover
 	std::vector<uint8_t> pointB2Buffer;
 	std::vector<uint8_t> pointCBuffer;
 	std::vector<uint8_t> pointHBuffer;
+	std::unique_ptr<CoefStorageInterface<AltBn128::Engine>> coefs;
 
 public:
     Groth16Prover(const void         *zkey_buffer,
@@ -154,6 +157,8 @@ public:
 		    ZKeyUtils::readPointsG1(zkey, pointCBuffer.data(), zkeyHeader->nVars, 8);
 		    ZKeyUtils::readPointsG1(zkey, pointHBuffer.data(), zkeyHeader->domainSize, 9);
 
+			coefs = std::unique_ptr<ZKopCoefStorage<AltBn128::Engine>>(new ZKopCoefStorage<AltBn128::Engine>(zkey.getSectionData(4), zkey.getSectionSize(4)));
+
             prover = Groth16::makeProver<AltBn128::Engine>(
                 zkeyHeader->nVars,
                 zkeyHeader->nPublic,
@@ -164,7 +169,7 @@ public:
                 zkeyHeader->vk_beta2,
                 zkeyHeader->vk_delta1,
                 zkeyHeader->vk_delta2,
-			    zkey.getSectionData(4),// Coefs
+				coefs.get(),
 			    pointABuffer.data(),    // pointsA
 			    pointB1Buffer.data(),   // pointsB1
 			    pointB2Buffer.data(),   // pointsB2
@@ -172,6 +177,8 @@ public:
 			    pointHBuffer.data()     // pointsH1
             );
         } else { // zkey.getType() == "zkey"
+			coefs = std::unique_ptr<ZKeyCoefStorage<AltBn128::Engine>>(new ZKeyCoefStorage<AltBn128::Engine>(zkey.getSectionData(4), zkey.getSectionSize(4)));
+
             prover = Groth16::makeProver<AltBn128::Engine>(
                 zkeyHeader->nVars,
                 zkeyHeader->nPublic,
@@ -182,7 +189,7 @@ public:
                 zkeyHeader->vk_beta2,
                 zkeyHeader->vk_delta1,
                 zkeyHeader->vk_delta2,
-                zkey.getSectionData(4),    // Coefs
+                coefs.get(),    // Coefs
                 zkey.getSectionData(5),    // pointsA
                 zkey.getSectionData(6),    // pointsB1
                 zkey.getSectionData(7),    // pointsB2

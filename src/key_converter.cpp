@@ -3,7 +3,6 @@
 #include <string>
 #include <vector>
 #include <stdexcept>
-//#include "prover.h"
 #include "fileloader.hpp"
 #include "binfile_utils.hpp"
 #include "fileloader.hpp"
@@ -76,37 +75,38 @@ int main(int argc, char **argv)
         const std::string zkeyFilename = argv[1];
         const std::string zkopFilename = argv[2];
 
-        std::unique_ptr<BinFileUtils::BinFile> zkey = BinFileUtils::openExisting(zkeyFilename, {"zkey"}, 1);
-        std::unique_ptr<ZKeyUtils::Header> zkeyHeader = ZKeyUtils::loadHeader(zkey.get());
+        BinFileUtils::BinFile zkey(zkeyFilename, {"zkey"}, 1);
+        std::unique_ptr<ZKeyUtils::Header> zkeyHeader = ZKeyUtils::loadHeader(&zkey);
 
         std::cout << "Original file" << std::endl;
-        printInfo(zkey.get());
+        printInfo(&zkey);
         std::cout << std::endl;
+
+        std::cout << "Domains : " << zkeyHeader->domainSize << std::endl;
+        std::cout << "Coef : " << zkeyHeader->nCoefs << std::endl;
 
         BinFileUtils::BinFileWriter writer("zkop", 1);
 
         // Save header untouched
         std::cout << "Optimization" << std::endl;
-        ZKeyUtils::saveHeader(writer , *zkeyHeader);
-        ZKeyUtils::saveCoefs(writer, zkey->getSectionData(4),  zkey->getSectionSize(4), 4); // Coefs
+        ZKeyUtils::copyHeader(writer , zkey); // Header
+        ZKeyUtils::optimizeCoefs(writer, zkey.getSectionData(4),  zkey.getSectionSize(4), 4); // Coefs
         std::cout << "Points A" << std::endl;
-        ZKeyUtils::savePointsG1(writer, zkey->getSectionData(5),  zkeyHeader->nVars, 5); // pointsA
+        ZKeyUtils::savePointsG1(writer, zkey.getSectionData(5),  zkeyHeader->nVars, 5); // pointsA
         std::cout << "Points B1" << std::endl;
-        ZKeyUtils::savePointsG1(writer, zkey->getSectionData(6),  zkeyHeader->nVars, 6); // PointsB1
+        ZKeyUtils::savePointsG1(writer, zkey.getSectionData(6),  zkeyHeader->nVars, 6); // PointsB1
         std::cout << "Points B2(G2)" << std::endl;
-        ZKeyUtils::savePointsG2(writer, zkey->getSectionData(7),  zkeyHeader->nVars, 7); // PointsB2
+        ZKeyUtils::savePointsG2(writer, zkey.getSectionData(7),  zkeyHeader->nVars, 7); // PointsB2
         std::cout << "Points C" << std::endl;
-        ZKeyUtils::savePointsG1(writer, zkey->getSectionData(8),  zkeyHeader->nVars, 8); // PointsC
+        ZKeyUtils::savePointsG1(writer, zkey.getSectionData(8),  zkeyHeader->nVars, 8); // PointsC
         std::cout << "Points H1" << std::endl;
-        ZKeyUtils::savePointsG1(writer, zkey->getSectionData(9),  zkeyHeader->domainSize, 9); // PointsH1
+        ZKeyUtils::savePointsG1(writer, zkey.getSectionData(9),  zkeyHeader->domainSize, 9); // PointsH1
         std::cout << std::endl;
         writer.writeToFile(zkopFilename);
 
         std::unique_ptr<BinFileUtils::BinFile> zkeyOp = BinFileUtils::openExisting(zkopFilename, {"zkop"}, 1);
         std::cout << "Optimized file" << std::endl;
         printInfo(zkeyOp.get());
-        std::cout << std::endl;
-
 
     } catch (std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;

@@ -18,7 +18,7 @@ std::unique_ptr<Prover<Engine>> makeProver(
     void *vk_beta_2,
     void *vk_delta_1,
     void *vk_delta_2,
-    void *coefs, 
+    CoefStorageInterface<Engine>* coefs,
     void *pointsA, 
     void *pointsB1, 
     void *pointsB2, 
@@ -36,7 +36,7 @@ std::unique_ptr<Prover<Engine>> makeProver(
         *(typename Engine::G2PointAffine *)vk_beta_2,
         *(typename Engine::G1PointAffine *)vk_delta_1,
         *(typename Engine::G2PointAffine *)vk_delta_2,
-        (Coef<Engine> *)((uint64_t)coefs + 4), 
+		static_cast<CoefStorageInterface<Engine>*>(coefs),
         (typename Engine::G1PointAffine *)pointsA,
         (typename Engine::G1PointAffine *)pointsB1,
         (typename Engine::G2PointAffine *)pointsB2,
@@ -99,20 +99,21 @@ std::unique_ptr<Proof<Engine>> Prover<Engine>::prove(typename Engine::FrElement 
 
     threadPool.parallelFor(0, nCoefs, [&] (int64_t begin, int64_t end, uint64_t idThread) {
         for (u_int64_t i=begin; i<end; i++) {
-            typename Engine::FrElement *ab = (coefs[i].m == 0) ? a : b;
+            Coef<Engine> coef = coefs->get(i);
+            typename Engine::FrElement *ab = (coef.m == 0) ? a : b;
             typename Engine::FrElement aux;
 
             E.fr.mul(
                 aux,
-                wtns[coefs[i].s],
-                coefs[i].coef
+                wtns[coef.s],
+                coef.coef
             );
 
-            std::lock_guard<std::mutex> guard(locks[coefs[i].c % NLOCKS]);
+            std::lock_guard<std::mutex> guard(locks[coef.c % NLOCKS]);
 
             E.fr.add(
-                ab[coefs[i].c],
-                ab[coefs[i].c],
+                ab[coef.c],
+                ab[coef.c],
                 aux
             );
         }
