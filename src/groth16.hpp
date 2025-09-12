@@ -7,6 +7,8 @@
 using json = nlohmann::json;
 
 #include "fft.hpp"
+#include "coef_storage_interface.hpp"
+#include "point_storage_interface.hpp"
 
 namespace Groth16 {
 
@@ -38,16 +40,6 @@ namespace Groth16 {
         void fromJson(const json& proof);
     };
 
- #pragma pack(push, 1)
-    template <typename Engine>
-    struct Coef {
-        u_int32_t m;
-        u_int32_t c;
-        u_int32_t s;
-        typename Engine::FrElement coef;
-    };
-#pragma pack(pop)
-
     template <typename Engine>
     class Prover {
 
@@ -61,13 +53,12 @@ namespace Groth16 {
         typename Engine::G2PointAffine &vk_beta2;
         typename Engine::G1PointAffine &vk_delta1;
         typename Engine::G2PointAffine &vk_delta2;
-        Coef<Engine> *coefs;
-        typename Engine::G1PointAffine *pointsA;
-        typename Engine::G1PointAffine *pointsB1;
-        typename Engine::G2PointAffine *pointsB2;
-        typename Engine::G1PointAffine *pointsC;
-        typename Engine::G1PointAffine *pointsH;
-
+        CoefStorageInterface<Engine> *coefs;
+        PointStorageInterface<typename Engine::G1PointAffine> *pointsA;
+        PointStorageInterface<typename Engine::G1PointAffine> *pointsB1;
+        PointStorageInterface<typename Engine::G2PointAffine> *pointsB2;
+        PointStorageInterface<typename Engine::G1PointAffine> *pointsC;
+        PointStorageInterface<typename Engine::G1PointAffine> *pointsH;
         FFT<typename Engine::Fr> *fft;
     public:
         Prover(
@@ -81,12 +72,12 @@ namespace Groth16 {
             typename Engine::G2PointAffine &_vk_beta2,
             typename Engine::G1PointAffine &_vk_delta1,
             typename Engine::G2PointAffine &_vk_delta2,
-            Coef<Engine> *_coefs, 
-            typename Engine::G1PointAffine *_pointsA,
-            typename Engine::G1PointAffine *_pointsB1,
-            typename Engine::G2PointAffine *_pointsB2,
-            typename Engine::G1PointAffine *_pointsC,
-            typename Engine::G1PointAffine *_pointsH
+            CoefStorageInterface<Engine> *_coefs,
+            PointStorageInterface<typename Engine::G1PointAffine> *_pointsA,
+            PointStorageInterface<typename Engine::G1PointAffine> *_pointsB1,
+            PointStorageInterface<typename Engine::G2PointAffine> *_pointsB2,
+            PointStorageInterface<typename Engine::G1PointAffine> *_pointsC,
+            PointStorageInterface<typename Engine::G1PointAffine> *_pointsH
         ) : 
             E(_E), 
             nVars(_nVars),
@@ -126,12 +117,12 @@ namespace Groth16 {
         void *vk_beta2,
         void *vk_delta1,
         void *vk_delta2,
-        void *coefs,
-        void *pointsA,
-        void *pointsB1,
-        void *pointsB2,
-        void *pointsC,
-        void *pointsH
+        CoefStorageInterface<Engine>* *coefs,
+        PointStorageInterface<typename Engine::G1PointAffine> *pointsA,
+        PointStorageInterface<typename Engine::G1PointAffine> *pointsB1,
+        PointStorageInterface<typename Engine::G2PointAffine> *pointsB2,
+        PointStorageInterface<typename Engine::G1PointAffine> *pointsC,
+        PointStorageInterface<typename Engine::G1PointAffine> *pointsH
     );
 
     template <typename Engine>

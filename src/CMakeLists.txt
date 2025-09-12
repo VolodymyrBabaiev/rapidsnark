@@ -82,10 +82,15 @@ endif()
 set(LIB_SOURCES
     binfile_utils.hpp
     binfile_utils.cpp
+    binfile_writer.hpp
+    binfile_writer.cpp
     zkey_utils.hpp
     zkey_utils.cpp
     wtns_utils.hpp
     wtns_utils.cpp
+    coef_storage_interface.hpp
+    zkop_point_storage.hpp
+    zkop_point_storage.cpp
     logger.hpp
     logger.cpp
     fileloader.cpp
@@ -123,6 +128,9 @@ target_link_libraries(prover rapidsnarkStatic)
 
 add_executable(verifier main_verifier.cpp)
 target_link_libraries(verifier rapidsnarkStatic)
+
+add_executable(key_converter key_converter.cpp)
+target_link_libraries(key_converter rapidsnarkStatic)
 
 add_library(rapidsnark SHARED ${LIB_SOURCES})
 

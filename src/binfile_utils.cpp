@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <system_error>
 #include <string>
+#include <sstream>
 #include <memory.h>
 #include <stdexcept>
 
@@ -12,24 +13,24 @@
 
 namespace BinFileUtils {
 
-BinFile::BinFile(const std::string& fileName, const std::string& _type, uint32_t maxVersion)
+BinFile::BinFile(const std::string& fileName, const std::unordered_set<std::string>& _types, uint32_t maxVersion)
     : fileLoader(fileName)
 {
     addr = fileLoader.dataBuffer();
     size = fileLoader.dataSize();
 
-    readFileData(_type, maxVersion);
+    readFileData(_types, maxVersion);
 }
 
-BinFile::BinFile(const void *fileData, size_t fileSize, std::string _type, uint32_t maxVersion) {
+BinFile::BinFile(const void *fileData, size_t fileSize, const std::unordered_set<std::string>& _types, uint32_t maxVersion) {
 
     addr = fileData;
     size = fileSize;
 
-    readFileData(_type, maxVersion);
+    readFileData(_types, maxVersion);
 }
 
-void BinFile::readFileData(std::string _type, uint32_t maxVersion) {
+void BinFile::readFileData(const std::unordered_set<std::string>& _types, uint32_t maxVersion) {
 
     const u_int64_t headerSize = 12;
     const u_int64_t minSectionSize = 12;
@@ -41,8 +42,16 @@ void BinFile::readFileData(std::string _type, uint32_t maxVersion) {
     type.assign((const char *)addr, 4);
     pos = 4;
 
-    if (type != _type) {
-        throw std::invalid_argument("Invalid file type. It should be " + _type + " and it is " + type);
+    if (_types.count(type) == 0) {
+        std::ostringstream oss;
+        bool first = true;
+        for (const auto& s : _types) {
+            if (!first) oss << ", ";
+            oss << s;
+            first = false;
+        }
+
+        throw std::invalid_argument("Invalid file type. It should be in [" + oss.str() + "] and it is " + type);
     }
 
     version = readU32LE();
@@ -170,9 +179,8 @@ void *BinFile::read(u_int64_t len) {
     return res;
 }
 
-std::unique_ptr<BinFile> openExisting(const std::string& filename, const std::string& type, uint32_t maxVersion) {
-    return std::unique_ptr<BinFile>(new BinFile(filename, type, maxVersion));
+std::unique_ptr<BinFile> openExisting(const std::string& filename, const std::unordered_set<std::string>& types, uint32_t maxVersion) {
+    return std::unique_ptr<BinFile>(new BinFile(filename, types, maxVersion));
 }
 
 } // Namespace
-
