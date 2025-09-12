@@ -14,6 +14,8 @@
 #include "memory.h"
 #include "zkey_coef_storage.hpp"
 #include "zkop_coef_storage.hpp"
+#include "zkey_point_storage.hpp"
+#include "zkop_point_storage.hpp"
 
 using json = nlohmann::json;
 
@@ -126,12 +128,12 @@ class Groth16Prover
     BinFileUtils::BinFile zkey;
     std::unique_ptr<ZKeyUtils::Header> zkeyHeader;
     std::unique_ptr<Groth16::Prover<AltBn128::Engine>> prover;
-	std::vector<uint8_t> pointABuffer;
-	std::vector<uint8_t> pointB1Buffer;
-	std::vector<uint8_t> pointB2Buffer;
-	std::vector<uint8_t> pointCBuffer;
-	std::vector<uint8_t> pointHBuffer;
-	std::unique_ptr<CoefStorageInterface<AltBn128::Engine>> coefs;
+    std::unique_ptr<CoefStorageInterface<AltBn128::Engine>> coefs;
+    std::unique_ptr<PointStorageInterface<AltBn128::Engine::G1PointAffine>> pointsA;
+    std::unique_ptr<PointStorageInterface<AltBn128::Engine::G1PointAffine>> pointsB1;
+    std::unique_ptr<PointStorageInterface<AltBn128::Engine::G2PointAffine>> pointsB2;
+    std::unique_ptr<PointStorageInterface<AltBn128::Engine::G1PointAffine>> pointsC;
+    std::unique_ptr<PointStorageInterface<AltBn128::Engine::G1PointAffine>> pointsH;
 
 public:
     Groth16Prover(const void         *zkey_buffer,
@@ -145,19 +147,13 @@ public:
         }
 
         if (zkey.getType() == "zkop") {
-		    pointABuffer.resize(zkeyHeader->nVars * 64);
-		    pointB1Buffer.resize(zkeyHeader->nVars * 64);
-		    pointB2Buffer.resize(zkeyHeader->nVars * 128);
-		    pointCBuffer.resize(zkeyHeader->nVars * 64);
-		    pointHBuffer.resize(zkeyHeader->domainSize * 64);
 
-		    ZKeyUtils::readPointsG1(zkey, pointABuffer.data(), zkeyHeader->nVars, 5);
-		    ZKeyUtils::readPointsG1(zkey, pointB1Buffer.data(), zkeyHeader->nVars, 6);
-		    ZKeyUtils::readPointsG2(zkey, pointB2Buffer.data(), zkeyHeader->nVars, 7);
-		    ZKeyUtils::readPointsG1(zkey, pointCBuffer.data(), zkeyHeader->nVars, 8);
-		    ZKeyUtils::readPointsG1(zkey, pointHBuffer.data(), zkeyHeader->domainSize, 9);
-
-			coefs = std::unique_ptr<ZKopCoefStorage<AltBn128::Engine>>(new ZKopCoefStorage<AltBn128::Engine>(zkey.getSectionData(4), zkey.getSectionSize(4)));
+            coefs = std::unique_ptr<ZKopCoefStorage<AltBn128::Engine>>(new ZKopCoefStorage<AltBn128::Engine>(zkey.getSectionData(4), zkey.getSectionSize(4)));
+            pointsA = std::unique_ptr<PointStorageInterface<AltBn128::Engine::G1PointAffine>>(new ZKopPointStorage<AltBn128::Engine::G1PointAffine>(zkey.getSectionData(5), zkey.getSectionSize(5)));
+            pointsB1 = std::unique_ptr<PointStorageInterface<AltBn128::Engine::G1PointAffine>>(new ZKopPointStorage<AltBn128::Engine::G1PointAffine>(zkey.getSectionData(6), zkey.getSectionSize(6)));
+            pointsB2 = std::unique_ptr<PointStorageInterface<AltBn128::Engine::G2PointAffine>>(new ZKopPointStorage<AltBn128::Engine::G2PointAffine>(zkey.getSectionData(7), zkey.getSectionSize(7)));
+            pointsC = std::unique_ptr<PointStorageInterface<AltBn128::Engine::G1PointAffine>>(new ZKopPointStorage<AltBn128::Engine::G1PointAffine>(zkey.getSectionData(8), zkey.getSectionSize(8)));
+            pointsH = std::unique_ptr<PointStorageInterface<AltBn128::Engine::G1PointAffine>>(new ZKopPointStorage<AltBn128::Engine::G1PointAffine>(zkey.getSectionData(9), zkey.getSectionSize(9)));
 
             prover = Groth16::makeProver<AltBn128::Engine>(
                 zkeyHeader->nVars,
@@ -169,15 +165,20 @@ public:
                 zkeyHeader->vk_beta2,
                 zkeyHeader->vk_delta1,
                 zkeyHeader->vk_delta2,
-				coefs.get(),
-			    pointABuffer.data(),    // pointsA
-			    pointB1Buffer.data(),   // pointsB1
-			    pointB2Buffer.data(),   // pointsB2
-			    pointCBuffer.data(),    // pointsC
-			    pointHBuffer.data()     // pointsH1
+                coefs.get(),
+                pointsA.get(),
+                pointsB1.get(),
+                pointsB2.get(),
+                pointsC.get(),
+                pointsH.get()
             );
         } else { // zkey.getType() == "zkey"
-			coefs = std::unique_ptr<ZKeyCoefStorage<AltBn128::Engine>>(new ZKeyCoefStorage<AltBn128::Engine>(zkey.getSectionData(4), zkey.getSectionSize(4)));
+            coefs = std::unique_ptr<ZKeyCoefStorage<AltBn128::Engine>>(new ZKeyCoefStorage<AltBn128::Engine>(zkey.getSectionData(4), zkey.getSectionSize(4)));
+            pointsA = std::unique_ptr<PointStorageInterface<AltBn128::Engine::G1PointAffine>>(new ZKeyPointStorage<AltBn128::Engine::G1PointAffine>(zkey.getSectionData(5), zkey.getSectionSize(5)));
+            pointsB1 = std::unique_ptr<PointStorageInterface<AltBn128::Engine::G1PointAffine>>(new ZKeyPointStorage<AltBn128::Engine::G1PointAffine>(zkey.getSectionData(6), zkey.getSectionSize(6)));
+            pointsB2 = std::unique_ptr<PointStorageInterface<AltBn128::Engine::G2PointAffine>>(new ZKeyPointStorage<AltBn128::Engine::G2PointAffine>(zkey.getSectionData(7), zkey.getSectionSize(7)));
+            pointsC = std::unique_ptr<PointStorageInterface<AltBn128::Engine::G1PointAffine>>(new ZKeyPointStorage<AltBn128::Engine::G1PointAffine>(zkey.getSectionData(8), zkey.getSectionSize(8)));
+            pointsH = std::unique_ptr<PointStorageInterface<AltBn128::Engine::G1PointAffine>>(new ZKeyPointStorage<AltBn128::Engine::G1PointAffine>(zkey.getSectionData(9), zkey.getSectionSize(9)));
 
             prover = Groth16::makeProver<AltBn128::Engine>(
                 zkeyHeader->nVars,
@@ -190,11 +191,11 @@ public:
                 zkeyHeader->vk_delta1,
                 zkeyHeader->vk_delta2,
                 coefs.get(),    // Coefs
-                zkey.getSectionData(5),    // pointsA
-                zkey.getSectionData(6),    // pointsB1
-                zkey.getSectionData(7),    // pointsB2
-                zkey.getSectionData(8),    // pointsC
-                zkey.getSectionData(9)     // pointsH1
+                pointsA.get(),
+                pointsB1.get(),
+                pointsB2.get(),
+                pointsC.get(),
+                pointsH.get()
             );
         }
     }

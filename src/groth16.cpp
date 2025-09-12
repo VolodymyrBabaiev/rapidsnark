@@ -4,6 +4,7 @@
 #include <sstream>
 #include <vector>
 #include <mutex>
+#include <msm_.hpp>
 
 namespace Groth16 {
 
@@ -19,11 +20,11 @@ std::unique_ptr<Prover<Engine>> makeProver(
     void *vk_delta_1,
     void *vk_delta_2,
     CoefStorageInterface<Engine>* coefs,
-    void *pointsA, 
-    void *pointsB1, 
-    void *pointsB2, 
-    void *pointsC, 
-    void *pointsH
+    PointStorageInterface<typename Engine::G1PointAffine> *pointsA,
+    PointStorageInterface<typename Engine::G1PointAffine> *pointsB1,
+    PointStorageInterface<typename Engine::G2PointAffine> *pointsB2,
+    PointStorageInterface<typename Engine::G1PointAffine> *pointsC,
+    PointStorageInterface<typename Engine::G1PointAffine> *pointsH
 ) {
     Prover<Engine> *p = new Prover<Engine>(
         Engine::engine, 
@@ -37,11 +38,11 @@ std::unique_ptr<Prover<Engine>> makeProver(
         *(typename Engine::G1PointAffine *)vk_delta_1,
         *(typename Engine::G2PointAffine *)vk_delta_2,
 		static_cast<CoefStorageInterface<Engine>*>(coefs),
-        (typename Engine::G1PointAffine *)pointsA,
-        (typename Engine::G1PointAffine *)pointsB1,
-        (typename Engine::G2PointAffine *)pointsB2,
-        (typename Engine::G1PointAffine *)pointsC,
-        (typename Engine::G1PointAffine *)pointsH
+        pointsA,
+        pointsB1,
+        pointsB2,
+        pointsC,
+        pointsH
     );
     return std::unique_ptr< Prover<Engine> >(p);
 }
@@ -54,28 +55,30 @@ std::unique_ptr<Proof<Engine>> Prover<Engine>::prove(typename Engine::FrElement 
     LOG_TRACE("Start Multiexp A");
     uint32_t sW = sizeof(wtns[0]);
     typename Engine::G1Point pi_a;
-    E.g1.multiMulByScalarMSM(pi_a, pointsA, (uint8_t *)wtns, sW, nVars);
+    MSMmem<typename Engine::G1, typename Engine::F1Element> msm_g1(E.g1);
+    msm_g1.run(pi_a, pointsA, (uint8_t *)wtns, sW, nVars);
     std::ostringstream ss2;
     ss2 << "pi_a: " << E.g1.toString(pi_a);
     LOG_DEBUG(ss2);
 
     LOG_TRACE("Start Multiexp B1");
     typename Engine::G1Point pib1;
-    E.g1.multiMulByScalarMSM(pib1, pointsB1, (uint8_t *)wtns, sW, nVars);
+    msm_g1.run(pib1, pointsB1, (uint8_t *)wtns, sW, nVars);
     std::ostringstream ss3;
     ss3 << "pib1: " << E.g1.toString(pib1);
     LOG_DEBUG(ss3);
 
     LOG_TRACE("Start Multiexp B2");
     typename Engine::G2Point pi_b;
-    E.g2.multiMulByScalarMSM(pi_b, pointsB2, (uint8_t *)wtns, sW, nVars);
+    MSMmem<typename Engine::G2, typename Engine::F1Element> msm_g2(E.g2);
+    msm_g2.run(pi_b, pointsB2, (uint8_t *)wtns, sW, nVars);
     std::ostringstream ss4;
     ss4 << "pi_b: " << E.g2.toString(pi_b);
     LOG_DEBUG(ss4);
 
     LOG_TRACE("Start Multiexp C");
     typename Engine::G1Point pi_c;
-    E.g1.multiMulByScalarMSM(pi_c, pointsC, (uint8_t *)((uint64_t)wtns + (nPublic +1)*sW), sW, nVars-nPublic-1);
+    msm_g1.run(pi_c, pointsC, (uint8_t *)((uint64_t)wtns + (nPublic +1)*sW), sW, nVars-nPublic-1);
     std::ostringstream ss5;
     ss5 << "pi_c: " << E.g1.toString(pi_c);
     LOG_DEBUG(ss5);
@@ -210,7 +213,7 @@ std::unique_ptr<Proof<Engine>> Prover<Engine>::prove(typename Engine::FrElement 
 
     LOG_TRACE("Start Multiexp H");
     typename Engine::G1Point pih;
-    E.g1.multiMulByScalarMSM(pih, pointsH, (uint8_t *)a, sizeof(a[0]), domainSize);
+    msm_g1.run(pih, pointsH, (uint8_t *)a, sizeof(a[0]), domainSize);
     std::ostringstream ss1;
     ss1 << "pih: " << E.g1.toString(pih);
     LOG_DEBUG(ss1);

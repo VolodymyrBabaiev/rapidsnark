@@ -89,6 +89,8 @@ set(LIB_SOURCES
     wtns_utils.hpp
     wtns_utils.cpp
     coef_storage_interface.hpp
+    zkop_point_storage.hpp
+    zkop_point_storage.cpp
     logger.hpp
     logger.cpp
     fileloader.cpp

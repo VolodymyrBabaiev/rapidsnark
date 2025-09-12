@@ -1,5 +1,5 @@
-#ifndef VB_KEY_OPT_ZKOP_COEF_PROVIDER1_HPP
-#define VB_KEY_OPT_ZKOP_COEF_PROVIDER1_HPP
+#ifndef ZKOP_COEF_PROVIDER_HPP
+#define ZKOP_COEF_PROVIDER_HPP
 
 #include "coef_storage_interface.hpp"
 
@@ -151,4 +151,4 @@ public:
 	}
 };
 
-#endif //VB_KEY_OPT_ZKOP_COEF_PROVIDER1_HPP
+#endif // ZKOP_COEF_PROVIDER_HPP

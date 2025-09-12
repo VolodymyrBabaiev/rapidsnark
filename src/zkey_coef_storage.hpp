@@ -1,5 +1,5 @@
-#ifndef VB_KEY_OPT_ZKEY_COEF_STORAGE_H
-#define VB_KEY_OPT_ZKEY_COEF_STORAGE_H
+#ifndef ZKEY_COEF_STORAGE_H
+#define ZKEY_COEF_STORAGE_H
 
 #include "coef_storage_interface.hpp"
 
@@ -57,4 +57,4 @@ public:
     }
 };
 
-#endif //VB_KEY_OPT_ZKEY_COEF_STORAGE_H
+#endif // ZKEY_COEF_STORAGE_H
