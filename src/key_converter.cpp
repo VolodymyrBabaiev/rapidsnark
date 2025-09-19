@@ -13,6 +13,7 @@
 #include "zkey_point_storage.hpp"
 #include "zkop_point_storage.hpp"
 #include "alt_bn128.hpp"
+#include "point_compress.hpp"
 
 
 class MemorySize {
@@ -69,12 +70,23 @@ void printPoint(void* point, size_t size) {
     uint8_t* p = reinterpret_cast<uint8_t*>(point);
     std::cout << "[ ";
     for (size_t i = 0; i < size; i++) {
+		if (i == size/2)
+			std::cout << " ] [";
         std::cout << std::setfill('0') << std::setw(2) << std::hex << (unsigned)p[i] << " ";
     }
 
     std::cout << std::dec << "]" << std::endl;
 }
 
+/*void printField(void* field, size_t size) {
+    uint8_t* p = reinterpret_cast<uint8_t*>(field);
+    std::cout << "[ ";
+    for (size_t i = 0; i < size; i++) {
+        std::cout << std::setfill('0') << std::setw(2) << std::hex << (unsigned)p[i] << " ";
+    }
+
+    std::cout << std::dec << "]" << std::endl;
+}*/
 
 // Helper function to compare two G1 points
 bool compareG1Points(const AltBn128::G1PointAffine& p1, const AltBn128::G1PointAffine& p2) {
@@ -295,6 +307,127 @@ void testG1PointsComparison(BinFileUtils::BinFile& zkey, BinFileUtils::BinFile& 
     }
 }
 
+void testG1PointsCompression(BinFileUtils::BinFile& zkey, std::unique_ptr<ZKeyUtils::Header>& zkeyHeader, uint32_t sectionIndex) {
+    std::cout << "\n=== Testing section " << sectionIndex << " Points Comparison ===" << std::endl;
+
+    try {
+        // Check section sizes first
+        std::cout << "ZKey section " << sectionIndex << " size: " << MemorySize(zkey.getSectionSize(sectionIndex)) << std::endl;
+
+        // Create point storage instances
+        ZKeyPointStorage<AltBn128::G1PointAffine> zkeyPointStorage(
+            zkey.getSectionData(sectionIndex),
+            zkey.getSectionSize(sectionIndex)
+        );
+
+        uint32_t totalPoints = zkeyHeader->nVars;
+        std::cout << "Total points to compare: " << totalPoints << std::endl;
+        std::cout << "ZKey storage reports: " << zkeyPointStorage.getPointCount() << " points" << std::endl;
+
+        uint32_t matchingPoints = 0;
+        uint32_t differentPoints = 0;
+        uint32_t zkeyZeroPoints = 0;
+        uint32_t zkopZeroPoints = 0;
+        uint32_t firstDifferenceIndex = UINT32_MAX;
+        uint32_t accessErrors = 0;
+
+        uint32_t comparePoints = zkeyPointStorage.getPointCount();
+
+        // Compare all points
+        for (uint32_t i = 0; i < comparePoints; i++) {
+            try {
+                AltBn128::G1PointAffine zkeyPoint = zkeyPointStorage.get(i);
+
+                bool zkeyIsZero = isZeroPoint(zkeyPoint);
+
+                if (zkeyIsZero) {
+                     zkeyZeroPoints++;
+                     continue;
+                }
+
+				AltBn128::F1Element zk_compressed = compressPoint<AltBn128::Engine>(zkeyPoint);
+				AltBn128::G1PointAffine zkeyDecompressed = decompressYCoordinate(zk_compressed, AltBn128::Engine::engine);
+
+                if (compareG1Points(zkeyPoint, zkeyDecompressed)) {
+                    matchingPoints++;
+                } else {
+                    differentPoints++;
+                    if (firstDifferenceIndex == UINT32_MAX) {
+                        firstDifferenceIndex = i;
+                    }
+
+                    // Print details for first few differences
+                    if (differentPoints <= 10) {
+                        std::cout << "Difference at index " << i << ":" << std::endl;
+						std::cout << "Original : ";
+                        printPoint(&zkeyPoint, sizeof(zkeyPoint));
+						std::cout << "Compressed : ";
+						printField(&zk_compressed, sizeof(zk_compressed));
+						std::cout << "Decompressed : ";
+                        printPoint(&zkeyDecompressed, sizeof(zkeyDecompressed));
+                    }
+                }
+
+                // Progress indicator for large datasets
+                if (comparePoints > 1000 && (i + 1) % (comparePoints / 10) == 0) {
+                    std::cout << "Progress: " << ((i + 1) * 100 / comparePoints) << "%" << std::endl;
+                }
+
+            } catch (const std::exception& e) {
+                accessErrors++;
+                std::cerr << "Error accessing point " << i << ": " << e.what() << std::endl;
+                if (accessErrors <= 5) { // Don't spam too many errors
+                    std::cerr << "  This counts as a difference." << std::endl;
+                }
+                differentPoints++;
+            }
+        }
+
+        // Print results
+        std::cout << "\n=== Points Comparison Results ===" << std::endl;
+        std::cout << "Total points compared: " << comparePoints << std::endl;
+        std::cout << "Matching points: " << matchingPoints << std::endl;
+        std::cout << "Different points: " << differentPoints << std::endl;
+        std::cout << "Access errors: " << accessErrors << std::endl;
+        std::cout << "ZKey zero points: " << zkeyZeroPoints << std::endl;
+
+        if (firstDifferenceIndex != UINT32_MAX) {
+            std::cout << "First difference at index: " << firstDifferenceIndex << std::endl;
+        }
+
+        double matchPercentage = (comparePoints > 0) ? (double(matchingPoints) / comparePoints * 100.0) : 0.0;
+        std::cout << "Match percentage: " << std::fixed << std::setprecision(2) << matchPercentage << "%" << std::endl;
+
+        if (matchingPoints == comparePoints && accessErrors == 0) {
+            std::cout << "✓ SUCCESS: All A points match between zkey and zkop files!" << std::endl;
+        } else {
+            std::cout << "✗ WARNING: " << differentPoints << " A points differ between files!" << std::endl;
+            if (accessErrors > 0) {
+                std::cout << "✗ ERROR: " << accessErrors << " access errors occurred!" << std::endl;
+            }
+        }
+
+        // Additional statistics
+        std::cout << "\n=== Additional Statistics ===" << std::endl;
+        std::cout << "Zero point ratio in ZKey: " << std::fixed << std::setprecision(2)
+                  << (comparePoints > 0 ? double(zkeyZeroPoints) / comparePoints * 100.0 : 0.0) << "%" << std::endl;
+
+        // Compression statistics
+        if (zkeyZeroPoints > 0) {
+            uint64_t originalSize = comparePoints * sizeof(AltBn128::G1PointAffine);
+            uint64_t compressedSize = (comparePoints - zkeyZeroPoints) * sizeof(AltBn128::G1PointAffine) +
+                                    4 + // point count
+                                    ((comparePoints + 7) / 8); // bit mask
+            double compressionRatio = double(compressedSize) / originalSize;
+            std::cout << "Estimated compression ratio: " << std::fixed << std::setprecision(3)
+                      << compressionRatio << " (" << (100.0 * (1.0 - compressionRatio)) << "% savings)" << std::endl;
+        }
+
+    } catch (const std::exception& e) {
+        std::cerr << "Error during points comparison: " << e.what() << std::endl;
+    }
+}
+
 void testG2PointsComparison(BinFileUtils::BinFile& zkey, BinFileUtils::BinFile& zkop,
                           std::unique_ptr<ZKeyUtils::Header>& zkeyHeader, uint32_t sectionIndex) {
     std::cout << "\n=== Testing section "<< sectionIndex <<" Points Comparison ===" << std::endl;
@@ -494,6 +627,8 @@ int main(int argc, char **argv)
         std::cout << "Optimized file" << std::endl;
         printInfo(zkeyOp.get());
 
+		// Test point compression
+		testG1PointsCompression(zkey, zkeyHeader, 5);
         // Test A points comparison
         //testG1PointsComparison(zkey, *zkeyOp, zkeyHeader, 5);
         // Test B points comparison

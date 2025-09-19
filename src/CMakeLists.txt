@@ -91,6 +91,8 @@ set(LIB_SOURCES
     coef_storage_interface.hpp
     zkop_point_storage.hpp
     zkop_point_storage.cpp
+    zkop_compress_point_storage.cpp
+    sqrt_test.cpp
     logger.hpp
     logger.cpp
     fileloader.cpp
@@ -131,6 +133,9 @@ target_link_libraries(verifier rapidsnarkStatic)
 
 add_executable(key_converter key_converter.cpp)
 target_link_libraries(key_converter rapidsnarkStatic)
+
+add_executable(sqrt_test sqrt_test.cpp)
+target_link_libraries(sqrt_test rapidsnarkStatic)
 
 add_library(rapidsnark SHARED ${LIB_SOURCES})
 
