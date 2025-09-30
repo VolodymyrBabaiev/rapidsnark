@@ -78,16 +78,6 @@ void printPoint(void* point, size_t size) {
     std::cout << std::dec << "]" << std::endl;
 }
 
-/*void printField(void* field, size_t size) {
-    uint8_t* p = reinterpret_cast<uint8_t*>(field);
-    std::cout << "[ ";
-    for (size_t i = 0; i < size; i++) {
-        std::cout << std::setfill('0') << std::setw(2) << std::hex << (unsigned)p[i] << " ";
-    }
-
-    std::cout << std::dec << "]" << std::endl;
-}*/
-
 // Helper function to compare two G1 points
 bool compareG1Points(const AltBn128::G1PointAffine& p1, const AltBn128::G1PointAffine& p2) {
     // Compare x coordinates
@@ -362,13 +352,12 @@ void testG1PointsCompression(BinFileUtils::BinFile& zkey, std::unique_ptr<ZKeyUt
 						std::cout << "Original : ";
                         printPoint(&zkeyPoint, sizeof(zkeyPoint));
 						std::cout << "Compressed : ";
-						printField(&zk_compressed, sizeof(zk_compressed));
+						ZKeyUtils::printField(&zk_compressed, sizeof(zk_compressed));
 						std::cout << "Decompressed : ";
                         printPoint(&zkeyDecompressed, sizeof(zkeyDecompressed));
                     }
                 }
 
-                // Progress indicator for large datasets
                 if (comparePoints > 1000 && (i + 1) % (comparePoints / 10) == 0) {
                     std::cout << "Progress: " << ((i + 1) * 100 / comparePoints) << "%" << std::endl;
                 }
@@ -611,15 +600,15 @@ int main(int argc, char **argv)
         ZKeyUtils::copyHeader(writer , zkey); // Header
         ZKeyUtils::optimizeCoefs(writer, zkey.getSectionData(4),  zkey.getSectionSize(4), 4); // Coefs
         std::cout << "Points A" << std::endl;
-        ZKeyUtils::savePointsG1ZeroMask(writer, zkey.getSectionData(5),  zkeyHeader->nVars, 5); // pointsA
+        ZKeyUtils::savePointsG1Optimized(writer, zkey.getSectionData(5),  zkeyHeader->nVars, 5); // pointsA
         std::cout << "Points B1" << std::endl;
-        ZKeyUtils::savePointsG1ZeroMask(writer, zkey.getSectionData(6),  zkeyHeader->nVars, 6); // PointsB1
+        ZKeyUtils::savePointsG1Optimized(writer, zkey.getSectionData(6),  zkeyHeader->nVars, 6); // PointsB1
         std::cout << "Points B2(G2)" << std::endl;
         ZKeyUtils::savePointsG2ZeroMask(writer, zkey.getSectionData(7),  zkeyHeader->nVars, 7); // PointsB2
         std::cout << "Points C" << std::endl;
-        ZKeyUtils::savePointsG1ZeroMask(writer, zkey.getSectionData(8),  zkeyHeader->nVars, 8); // PointsC
+        ZKeyUtils::savePointsG1Optimized(writer, zkey.getSectionData(8),  zkeyHeader->nVars, 8); // PointsC
         std::cout << "Points H1" << std::endl;
-        ZKeyUtils::savePointsG1ZeroMask(writer, zkey.getSectionData(9),  zkeyHeader->domainSize, 9); // PointsH1
+        ZKeyUtils::savePointsG1Optimized(writer, zkey.getSectionData(9),  zkeyHeader->domainSize, 9); // PointsH1
         std::cout << std::endl;
         writer.writeToFile(zkopFilename);
 
@@ -628,7 +617,7 @@ int main(int argc, char **argv)
         printInfo(zkeyOp.get());
 
 		// Test point compression
-		testG1PointsCompression(zkey, zkeyHeader, 5);
+		//testG1PointsCompression(zkey, zkeyHeader, 5);
         // Test A points comparison
         //testG1PointsComparison(zkey, *zkeyOp, zkeyHeader, 5);
         // Test B points comparison

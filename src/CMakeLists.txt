@@ -90,8 +90,7 @@ set(LIB_SOURCES
     wtns_utils.cpp
     coef_storage_interface.hpp
     zkop_point_storage.hpp
-    zkop_point_storage.cpp
-    zkop_compress_point_storage.cpp
+    zero_tracker.cpp
     sqrt_test.cpp
     logger.hpp
     logger.cpp

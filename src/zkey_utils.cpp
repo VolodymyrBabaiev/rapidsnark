@@ -6,7 +6,7 @@
 #include "alt_bn128.hpp"
 #include "groth16.hpp"
 #include "zkop_point_storage.hpp"
-
+#include "point_compress.hpp"
 
 namespace ZKeyUtils {
 
@@ -151,6 +151,45 @@ void savePointsG1ZeroMask(BinFileUtils::BinFileWriter &writer, void *data, uint3
 
             writer.write(p1, 32);
             writer.write(p2, 32);
+        }
+    }
+
+    std::cout<<"Zero point num : "<< zeroNum << " (" << (static_cast<double>(zeroNum) / nPoints * 100) << "%)"<< std::endl;
+    std::cout<<"Points num : "<< nPoints << std::endl;
+
+    writer.endSection();
+}
+
+void savePointsG1Optimized(BinFileUtils::BinFileWriter &writer, void *data, uint32_t nPoints, uint32_t section) {
+    writer.startSection(section);
+
+    MemoryEfficientZeroTracker zeroTracker(nPoints);
+    int zeroNum = 0;
+
+    for (int i = 0; i < nPoints; i++) {
+        uint8_t* p1 = static_cast<uint8_t*>(data) + i * 64;
+        uint8_t* p2 = static_cast<uint8_t*>(data) + i * 64 + 32;
+
+        if (isZero(p1) && isZero(p2)) {
+            zeroNum++;
+            zeroTracker.setBit(i, 1);
+        }
+    }
+
+    zeroTracker.buildCache();
+
+    writer.writeU32LE(nPoints);
+    std::vector<uint8_t> zeroMask = zeroTracker.getBitArray();
+    for (int i = 0; i < zeroMask.size(); i++) {
+        writer.writeU8(zeroMask[i]);
+    }
+
+    for (int i = 0; i < nPoints; i++) {
+        if (!zeroTracker.isZeroAt(i)) {
+            uint8_t* p1 = static_cast<uint8_t*>(data) + i * 64;
+            AltBn128::F1Element zk_compressed = compressPointMontgomery<AltBn128::Engine, RawFq::Element>(*reinterpret_cast<AltBn128::Engine::G1PointAffine*>(p1), AltBn128::Engine::engine);
+
+            writer.write(&zk_compressed, 32);
         }
     }
 
@@ -428,6 +467,16 @@ void optimizeCoefs(BinFileUtils::BinFileWriter &writer, void *sectionData,  uint
     }
 
     writer.endSection();
+}
+
+void printField(void* field, size_t size) {
+    uint8_t* p = reinterpret_cast<uint8_t*>(field);
+    std::cout << "[ ";
+    for (size_t i = 0; i < size; i++) {
+        std::cout << std::setfill('0') << std::setw(2) << std::hex << (unsigned)p[i] << " ";
+    }
+
+    std::cout << std::dec << "]" << std::endl;
 }
 
 } // namespace

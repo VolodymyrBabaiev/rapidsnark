@@ -16,6 +16,7 @@
 #include "zkop_coef_storage.hpp"
 #include "zkey_point_storage.hpp"
 #include "zkop_point_storage.hpp"
+#include "zkop_compress_point_storage.hpp"
 
 using json = nlohmann::json;
 
@@ -149,11 +150,11 @@ public:
         if (zkey.getType() == "zkop") {
 
             coefs = std::unique_ptr<ZKopCoefStorage<AltBn128::Engine>>(new ZKopCoefStorage<AltBn128::Engine>(zkey.getSectionData(4), zkey.getSectionSize(4)));
-            pointsA = std::unique_ptr<PointStorageInterface<AltBn128::Engine::G1PointAffine>>(new ZKopPointStorage<AltBn128::Engine::G1PointAffine>(zkey.getSectionData(5), zkey.getSectionSize(5)));
-            pointsB1 = std::unique_ptr<PointStorageInterface<AltBn128::Engine::G1PointAffine>>(new ZKopPointStorage<AltBn128::Engine::G1PointAffine>(zkey.getSectionData(6), zkey.getSectionSize(6)));
+            pointsA = std::unique_ptr<PointStorageInterface<AltBn128::Engine::G1PointAffine>>(new ZKopCompressPointStorage<AltBn128::Engine::G1PointAffine, AltBn128::Engine>(zkey.getSectionData(5), zkey.getSectionSize(5), AltBn128::Engine::engine));
+            pointsB1 = std::unique_ptr<PointStorageInterface<AltBn128::Engine::G1PointAffine>>(new ZKopCompressPointStorage<AltBn128::Engine::G1PointAffine, AltBn128::Engine>(zkey.getSectionData(6), zkey.getSectionSize(6), AltBn128::Engine::engine));
             pointsB2 = std::unique_ptr<PointStorageInterface<AltBn128::Engine::G2PointAffine>>(new ZKopPointStorage<AltBn128::Engine::G2PointAffine>(zkey.getSectionData(7), zkey.getSectionSize(7)));
-            pointsC = std::unique_ptr<PointStorageInterface<AltBn128::Engine::G1PointAffine>>(new ZKopPointStorage<AltBn128::Engine::G1PointAffine>(zkey.getSectionData(8), zkey.getSectionSize(8)));
-            pointsH = std::unique_ptr<PointStorageInterface<AltBn128::Engine::G1PointAffine>>(new ZKopPointStorage<AltBn128::Engine::G1PointAffine>(zkey.getSectionData(9), zkey.getSectionSize(9)));
+            pointsC = std::unique_ptr<PointStorageInterface<AltBn128::Engine::G1PointAffine>>(new ZKopCompressPointStorage<AltBn128::Engine::G1PointAffine, AltBn128::Engine>(zkey.getSectionData(8), zkey.getSectionSize(8), AltBn128::Engine::engine));
+            pointsH = std::unique_ptr<PointStorageInterface<AltBn128::Engine::G1PointAffine>>(new ZKopCompressPointStorage<AltBn128::Engine::G1PointAffine, AltBn128::Engine>(zkey.getSectionData(9), zkey.getSectionSize(9), AltBn128::Engine::engine));
 
             prover = Groth16::makeProver<AltBn128::Engine>(
                 zkeyHeader->nVars,
