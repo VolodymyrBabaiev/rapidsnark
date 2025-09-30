@@ -3,6 +3,7 @@
 #include <string>
 #include <map>
 #include <vector>
+#include <unordered_set>
 #include <memory>
 #include "fileloader.hpp"
 
@@ -32,12 +33,12 @@ namespace BinFileUtils {
 
         Section *readingSection;
 
-        void readFileData(std::string _type, uint32_t maxVersion);
+        void readFileData(const std::unordered_set<std::string>& _types, uint32_t maxVersion);
 
     public:
 
-        BinFile(const void *fileData, size_t fileSize, std::string _type, uint32_t maxVersion);
-        BinFile(const std::string& fileName, const std::string& _type, uint32_t maxVersion);
+        BinFile(const void *fileData, size_t fileSize, const std::unordered_set<std::string>& _type, uint32_t maxVersion);
+        BinFile(const std::string& fileName, const std::unordered_set<std::string>& _type, uint32_t maxVersion);
         BinFile(const BinFile&) = delete;
         BinFile& operator=(const BinFile&) = delete;
 
@@ -47,13 +48,15 @@ namespace BinFileUtils {
         void *getSectionData(u_int32_t sectionId, u_int32_t sectionPos = 0);
         u_int64_t getSectionSize(u_int32_t sectionId, u_int32_t sectionPos = 0);
 
+        const std::string& getType() const { return type; }
+        const u_int64_t getDataSize() const { return size; }
         u_int32_t readU32LE();
         u_int64_t readU64LE();
 
         void *read(uint64_t l);
     };
 
-    std::unique_ptr<BinFile> openExisting(const std::string& filename, const std::string& type, uint32_t maxVersion);
+    std::unique_ptr<BinFile> openExisting(const std::string& filename, const std::unordered_set<std::string>& types, uint32_t maxVersion);
 }
 
 #endif // BINFILE_UTILS_H

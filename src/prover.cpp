@@ -10,6 +10,10 @@
 #include "wtns_utils.hpp"
 #include "binfile_utils.hpp"
 #include "fileloader.hpp"
+#include "binfile_writer.hpp"
+#include "memory.h"
+#include "zkey_coef_storage.hpp"
+#include "zkop_coef_storage.hpp"
 
 using json = nlohmann::json;
 
@@ -122,35 +126,77 @@ class Groth16Prover
     BinFileUtils::BinFile zkey;
     std::unique_ptr<ZKeyUtils::Header> zkeyHeader;
     std::unique_ptr<Groth16::Prover<AltBn128::Engine>> prover;
+	std::vector<uint8_t> pointABuffer;
+	std::vector<uint8_t> pointB1Buffer;
+	std::vector<uint8_t> pointB2Buffer;
+	std::vector<uint8_t> pointCBuffer;
+	std::vector<uint8_t> pointHBuffer;
+	std::unique_ptr<CoefStorageInterface<AltBn128::Engine>> coefs;
 
 public:
     Groth16Prover(const void         *zkey_buffer,
                   unsigned long long  zkey_size)
 
-        : zkey(zkey_buffer, zkey_size, "zkey", 1),
+        : zkey(zkey_buffer, zkey_size, {"zkey", "zkop"}, 1),
           zkeyHeader(ZKeyUtils::loadHeader(&zkey))
     {
         if (!PrimeIsValid(zkeyHeader->rPrime)) {
             throw std::invalid_argument("zkey curve not supported");
         }
 
-        prover = Groth16::makeProver<AltBn128::Engine>(
-            zkeyHeader->nVars,
-            zkeyHeader->nPublic,
-            zkeyHeader->domainSize,
-            zkeyHeader->nCoefs,
-            zkeyHeader->vk_alpha1,
-            zkeyHeader->vk_beta1,
-            zkeyHeader->vk_beta2,
-            zkeyHeader->vk_delta1,
-            zkeyHeader->vk_delta2,
-            zkey.getSectionData(4),    // Coefs
-            zkey.getSectionData(5),    // pointsA
-            zkey.getSectionData(6),    // pointsB1
-            zkey.getSectionData(7),    // pointsB2
-            zkey.getSectionData(8),    // pointsC
-            zkey.getSectionData(9)     // pointsH1
-        );
+        if (zkey.getType() == "zkop") {
+		    pointABuffer.resize(zkeyHeader->nVars * 64);
+		    pointB1Buffer.resize(zkeyHeader->nVars * 64);
+		    pointB2Buffer.resize(zkeyHeader->nVars * 128);
+		    pointCBuffer.resize(zkeyHeader->nVars * 64);
+		    pointHBuffer.resize(zkeyHeader->domainSize * 64);
+
+		    ZKeyUtils::readPointsG1(zkey, pointABuffer.data(), zkeyHeader->nVars, 5);
+		    ZKeyUtils::readPointsG1(zkey, pointB1Buffer.data(), zkeyHeader->nVars, 6);
+		    ZKeyUtils::readPointsG2(zkey, pointB2Buffer.data(), zkeyHeader->nVars, 7);
+		    ZKeyUtils::readPointsG1(zkey, pointCBuffer.data(), zkeyHeader->nVars, 8);
+		    ZKeyUtils::readPointsG1(zkey, pointHBuffer.data(), zkeyHeader->domainSize, 9);
+
+			coefs = std::unique_ptr<ZKopCoefStorage<AltBn128::Engine>>(new ZKopCoefStorage<AltBn128::Engine>(zkey.getSectionData(4), zkey.getSectionSize(4)));
+
+            prover = Groth16::makeProver<AltBn128::Engine>(
+                zkeyHeader->nVars,
+                zkeyHeader->nPublic,
+                zkeyHeader->domainSize,
+                zkeyHeader->nCoefs,
+                zkeyHeader->vk_alpha1,
+                zkeyHeader->vk_beta1,
+                zkeyHeader->vk_beta2,
+                zkeyHeader->vk_delta1,
+                zkeyHeader->vk_delta2,
+				coefs.get(),
+			    pointABuffer.data(),    // pointsA
+			    pointB1Buffer.data(),   // pointsB1
+			    pointB2Buffer.data(),   // pointsB2
+			    pointCBuffer.data(),    // pointsC
+			    pointHBuffer.data()     // pointsH1
+            );
+        } else { // zkey.getType() == "zkey"
+			coefs = std::unique_ptr<ZKeyCoefStorage<AltBn128::Engine>>(new ZKeyCoefStorage<AltBn128::Engine>(zkey.getSectionData(4), zkey.getSectionSize(4)));
+
+            prover = Groth16::makeProver<AltBn128::Engine>(
+                zkeyHeader->nVars,
+                zkeyHeader->nPublic,
+                zkeyHeader->domainSize,
+                zkeyHeader->nCoefs,
+                zkeyHeader->vk_alpha1,
+                zkeyHeader->vk_beta1,
+                zkeyHeader->vk_beta2,
+                zkeyHeader->vk_delta1,
+                zkeyHeader->vk_delta2,
+                coefs.get(),    // Coefs
+                zkey.getSectionData(5),    // pointsA
+                zkey.getSectionData(6),    // pointsB1
+                zkey.getSectionData(7),    // pointsB2
+                zkey.getSectionData(8),    // pointsC
+                zkey.getSectionData(9)     // pointsH1
+            );
+        }
     }
 
     void prove(const void         *wtns_buffer,
@@ -158,7 +204,7 @@ public:
                std::string        &stringProof,
                std::string        &stringPublic)
     {
-        BinFileUtils::BinFile wtns(wtns_buffer, wtns_size, "wtns", 2);
+        BinFileUtils::BinFile wtns(wtns_buffer, wtns_size, {"wtns"}, 2);
         auto wtnsHeader = WtnsUtils::loadHeader(&wtns);
 
         if (zkeyHeader->nVars != wtnsHeader->nVars) {
@@ -200,7 +246,7 @@ groth16_public_size_for_zkey_buf(
     unsigned long long   error_msg_maxsize)
 {
     try {
-        BinFileUtils::BinFile zkey(zkey_buffer, zkey_size, "zkey", 1);
+        BinFileUtils::BinFile zkey(zkey_buffer, zkey_size, {"zkey", "zkop"}, 1);
         auto zkeyHeader = ZKeyUtils::loadHeader(&zkey);
 
         *public_size = PublicBufferMinSize(zkeyHeader->nPublic);
@@ -225,7 +271,7 @@ groth16_public_size_for_zkey_file(
     unsigned long long   error_msg_maxsize)
 {
     try {
-        auto zkey = BinFileUtils::openExisting(zkey_fname, "zkey", 1);
+        auto zkey = BinFileUtils::openExisting(zkey_fname, {"zkey", "zkop"}, 1);
         auto zkeyHeader = ZKeyUtils::loadHeader(zkey.get());
 
         *public_size = PublicBufferMinSize(zkeyHeader->nPublic);
